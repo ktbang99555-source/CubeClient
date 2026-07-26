@@ -1,6 +1,7 @@
 package com.cubeclient.launcher.launch;
 
 import com.cubeclient.launcher.auth.Session;
+import com.cubeclient.launcher.loader.LoaderInstaller.InstalledLoader;
 import com.cubeclient.launcher.manifest.VersionDetail;
 import com.cubeclient.launcher.profile.Profile;
 import org.junit.jupiter.api.Test;
@@ -10,6 +11,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JvmArgsBuilderTest {
@@ -30,7 +32,7 @@ class JvmArgsBuilderTest {
         Path javaBin = sharedRoot.resolve(Path.of("runtimes", "17", "bin", "java.exe"));
 
         List<String> command = new JvmArgsBuilder()
-            .build(profile, detail, gameDir, sharedRoot, javaBin, Session.offline(profile.id()));
+            .build(profile, detail, gameDir, sharedRoot, javaBin, Session.offline(profile.id()), InstalledLoader.none());
 
         assertEquals(javaBin.toString(), command.get(0));
         assertEquals("-cp", command.get(1));
@@ -80,7 +82,7 @@ class JvmArgsBuilderTest {
             sharedRoot.resolve(Path.of("instances", "latest-1.21")),
             sharedRoot,
             sharedRoot.resolve(Path.of("runtimes", "17", "bin", "java.exe")),
-            Session.online("Steve", "abc123uuid", "MC_TOKEN"));
+            Session.online("Steve", "abc123uuid", "MC_TOKEN"), InstalledLoader.none());
 
         assertEquals("Steve", command.get(command.indexOf("--username") + 1));
         assertEquals("abc123uuid", command.get(command.indexOf("--uuid") + 1));
@@ -97,9 +99,85 @@ class JvmArgsBuilderTest {
             sharedRoot.resolve(Path.of("instances", "latest-1.21")),
             sharedRoot,
             sharedRoot.resolve(Path.of("runtimes", "17", "bin", "java.exe")),
-            Session.offline("manual-test"));
+            Session.offline("manual-test"), InstalledLoader.none());
 
         assertEquals("manual-test", command.get(command.indexOf("--username") + 1));
         assertEquals("legacy", command.get(command.indexOf("--userType") + 1));
+    }
+
+    // With a loader installed the game must boot through the loader, not vanilla's main class,
+    // and the loader's jars must precede the vanilla ones so its ASM/loader classes win.
+    @Test
+    void aLoaderReplacesTheMainClassAndLeadsTheClasspath() {
+        Path sharedRoot = Path.of("C:", "AppData", "CubeClient");
+        Path loaderJar = sharedRoot.resolve(Path.of("libraries", "net", "fabricmc", "fabric-loader.jar"));
+        InstalledLoader loader = new InstalledLoader(
+            "net.fabricmc.loader.impl.launch.knot.KnotClient", List.of(loaderJar), java.util.Set.of());
+
+        List<String> command = new JvmArgsBuilder().build(
+            new Profile("fabric-1.21", "1.21.4", "fabric", List.of()),
+            sampleDetail(),
+            sharedRoot.resolve(Path.of("instances", "fabric-1.21")),
+            sharedRoot,
+            sharedRoot.resolve(Path.of("runtimes", "21", "bin", "java.exe")),
+            Session.offline("fabric-1.21"),
+            loader);
+
+        assertEquals("net.fabricmc.loader.impl.launch.knot.KnotClient", command.get(3));
+        String classpath = command.get(2);
+        assertTrue(classpath.startsWith(loaderJar.toString()),
+            "loader jars must come first; got " + classpath);
+    }
+
+    @Test
+    void vanillaKeepsTheManifestMainClass() {
+        Path sharedRoot = Path.of("C:", "AppData", "CubeClient");
+
+        List<String> command = new JvmArgsBuilder().build(
+            new Profile("v", "1.21.4", "vanilla", List.of()),
+            sampleDetail(),
+            sharedRoot.resolve(Path.of("instances", "v")),
+            sharedRoot,
+            sharedRoot.resolve(Path.of("runtimes", "21", "bin", "java.exe")),
+            Session.offline("v"),
+            InstalledLoader.none());
+
+        assertEquals("net.minecraft.client.main.Main", command.get(3));
+    }
+
+    // Fabric ships its own ASM. Leaving the game's copy on the classpath makes the loader abort
+    // with "duplicate ASM classes found on classpath" and the game never opens — found by
+    // actually launching, not by any unit test.
+    @Test
+    void dropsVanillaLibrariesTheLoaderSupersedes() {
+        Path sharedRoot = Path.of("C:", "AppData", "CubeClient");
+        VersionDetail detail = new VersionDetail(
+            "1.21.4",
+            "net.minecraft.client.main.Main",
+            new VersionDetail.ClientDownload("https://example.com/client.jar", "abc", 100),
+            List.of(
+                new VersionDetail.Library("org/ow2/asm/asm/9.6/asm-9.6.jar", "u", "d", 1),
+                new VersionDetail.Library("com/example/keep/1.0/keep-1.0.jar", "u", "d", 1)),
+            new VersionDetail.AssetIndexRef("17", "https://example.com/17.json", "ghi"),
+            21);
+        Path fabricAsm = sharedRoot.resolve(
+            Path.of("libraries", "org", "ow2", "asm", "asm", "9.10.1", "asm-9.10.1.jar"));
+        InstalledLoader loader = new InstalledLoader(
+            "net.fabricmc.loader.impl.launch.knot.KnotClient",
+            List.of(fabricAsm),
+            java.util.Set.of("org/ow2/asm/asm"));
+
+        String classpath = new JvmArgsBuilder().build(
+            new Profile("fabric-1.21", "1.21.4", "fabric", List.of()),
+            detail,
+            sharedRoot.resolve(Path.of("instances", "fabric-1.21")),
+            sharedRoot,
+            sharedRoot.resolve(Path.of("runtimes", "21", "bin", "java.exe")),
+            Session.offline("fabric-1.21"),
+            loader).get(2);
+
+        assertTrue(classpath.contains("asm-9.10.1.jar"), classpath);
+        assertFalse(classpath.contains("asm-9.6.jar"), "vanilla ASM must be dropped: " + classpath);
+        assertTrue(classpath.contains("keep-1.0.jar"), "unrelated libraries must survive");
     }
 }

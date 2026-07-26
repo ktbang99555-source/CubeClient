@@ -104,9 +104,10 @@ public final class Main {
             var assetDownloader = new AssetDownloader(fetcher, downloader);
             var argsBuilder = new JvmArgsBuilder();
             var processRunner = new RealProcessRunner();
+            var loaderInstaller = new com.cubeclient.launcher.loader.LoaderInstaller(fetcher, downloader);
             var jreProvisioner = new JreProvisioner(fetcher, downloader);
             var launchCommand = new LaunchCommand(manifestFetcher, downloader, assetDownloader,
-                argsBuilder, jreProvisioner, processRunner, events);
+                argsBuilder, loaderInstaller, jreProvisioner, processRunner, events);
 
             Path gameDir = appData.resolve("instances").resolve(profile.id());
 

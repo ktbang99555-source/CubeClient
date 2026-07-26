@@ -8,6 +8,7 @@ import com.cubeclient.launcher.http.HttpFetcher;
 import com.cubeclient.launcher.manifest.VersionDetail;
 import com.cubeclient.launcher.manifest.VersionEntry;
 import com.cubeclient.launcher.manifest.VersionManifestFetcher;
+import com.cubeclient.launcher.loader.LoaderInstaller;
 import com.cubeclient.launcher.profile.Profile;
 import com.cubeclient.launcher.runtime.JreProvisioner;
 import org.junit.jupiter.api.Test;
@@ -156,8 +157,10 @@ class LaunchCommandTest {
                 return runtimesDir.resolve(String.valueOf(majorVersion)).resolve("bin/java");
             }
         };
+        // The vanilla profile installs no loader; LoaderInstaller has its own tests.
+        LoaderInstaller loaderInstaller = new LoaderInstaller(fetcher, downloader);
         LaunchCommand launchCommand = new LaunchCommand(manifestFetcher, downloader, assetDownloader,
-            new JvmArgsBuilder(), jreProvisioner, processRunner, events);
+            new JvmArgsBuilder(), loaderInstaller, jreProvisioner, processRunner, events);
 
         Profile profile = new Profile("latest-1.21", "1.21.4", "vanilla", List.of());
         Path sharedRoot = tempDir;

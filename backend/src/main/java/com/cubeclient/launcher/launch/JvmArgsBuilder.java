@@ -1,6 +1,8 @@
 package com.cubeclient.launcher.launch;
 
 import com.cubeclient.launcher.auth.Session;
+import com.cubeclient.launcher.loader.LoaderInstaller;
+import com.cubeclient.launcher.loader.LoaderInstaller.InstalledLoader;
 import com.cubeclient.launcher.manifest.VersionDetail;
 import com.cubeclient.launcher.profile.Profile;
 
@@ -20,12 +22,14 @@ public class JvmArgsBuilder {
      *                   by path arithmetic, so the layout is stated once and cannot drift.
      */
     public List<String> build(Profile profile, VersionDetail detail, Path gameDir, Path sharedRoot,
-                              Path javaBin, Session session) {
+                              Path javaBin, Session session, InstalledLoader loader) {
         List<String> command = new ArrayList<>();
         command.add(javaBin.toString());
         command.add("-cp");
-        command.add(buildClasspath(detail, sharedRoot));
-        command.add(detail.mainClass());
+        command.add(buildClasspath(detail, sharedRoot, loader));
+        // Fabric boots through its own launcher, which then loads Minecraft. Keeping the vanilla
+        // main class would start the game with none of the profile's mods loaded.
+        command.add(loader.isEmpty() ? detail.mainClass() : loader.mainClass());
         command.add("--version");
         command.add(profile.mcVersion());
         command.add("--gameDir");
@@ -51,10 +55,18 @@ public class JvmArgsBuilder {
         return command;
     }
 
-    private String buildClasspath(VersionDetail detail, Path sharedRoot) {
-        List<String> entries = detail.libraries().stream()
+    private String buildClasspath(VersionDetail detail, Path sharedRoot, InstalledLoader loader) {
+        List<String> entries = new ArrayList<>();
+        // Loader jars go first: Fabric's ASM and loader classes must win over anything the
+        // vanilla library set happens to also ship.
+        loader.extraClasspath().forEach(path -> entries.add(path.toString()));
+        detail.libraries().stream()
+            // Drop vanilla builds the loader replaces. Fabric aborts at startup if it finds two
+            // versions of ASM on the classpath, so this is required, not an optimisation.
+            .filter(library ->
+                !loader.supersededModules().contains(LoaderInstaller.moduleKey(library.relativePath())))
             .map(library -> sharedRoot.resolve("libraries").resolve(library.relativePath()).toString())
-            .collect(Collectors.toCollection(ArrayList::new));
+            .forEach(entries::add);
         entries.add(sharedRoot.resolve(Path.of("versions", detail.id(), detail.id() + ".jar")).toString());
         return String.join(File.pathSeparator, entries);
     }
