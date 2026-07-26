@@ -8,7 +8,14 @@ import com.google.gson.JsonParser;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Downloads a version's assets — sounds, language files, and other non-code resources.
@@ -23,6 +30,9 @@ import java.util.Map;
 public class AssetDownloader {
 
     private static final String RESOURCES_HOST = "https://resources.download.minecraft.net";
+
+    /** Enough to hide per-request latency without hammering Mojang's CDN. */
+    private static final int DOWNLOAD_THREADS = 16;
 
     /** Reports completed/total so a multi-thousand-file download does not look frozen. */
     @FunctionalInterface
@@ -64,24 +74,77 @@ public class AssetDownloader {
         }
 
         Path objectsDir = sharedRoot.resolve(Path.of("assets", "objects"));
-        int total = objects.size();
-        int completed = 0;
 
+        // Read every hash up front so a malformed entry fails before any download starts.
+        List<String> hashes = new ArrayList<>(objects.size());
         for (Map.Entry<String, com.google.gson.JsonElement> entry : objects.entrySet()) {
-            String hash;
             try {
-                hash = entry.getValue().getAsJsonObject().get("hash").getAsString();
+                hashes.add(entry.getValue().getAsJsonObject().get("hash").getAsString());
             } catch (RuntimeException e) {
                 throw new IOException(
                     "Asset \"" + entry.getKey() + "\" in " + assetIndex.url() + " has no usable hash", e);
             }
-            String shard = hash.substring(0, 2);
-            downloader.downloadVerified(
-                RESOURCES_HOST + "/" + shard + "/" + hash,
-                objectsDir.resolve(shard).resolve(hash),
-                hash
-            );
-            listener.onProgress(++completed, total);
+        }
+
+        downloadObjects(hashes, objectsDir, listener);
+    }
+
+    /**
+     * Fetches the objects concurrently.
+     *
+     * <p>A modern version's index lists several thousand small files. Downloading them one at a
+     * time is latency-bound, not bandwidth-bound — measured at roughly 1.5 files/second, which
+     * puts a first launch near 40 minutes. These are independent GETs to a CDN, so a modest pool
+     * turns that into a couple of minutes.
+     */
+    private void downloadObjects(List<String> hashes, Path objectsDir, ProgressListener listener)
+            throws IOException {
+        int total = hashes.size();
+        if (total == 0) {
+            return;
+        }
+
+        AtomicInteger completed = new AtomicInteger();
+        ExecutorService pool = Executors.newFixedThreadPool(
+            Math.min(DOWNLOAD_THREADS, total),
+            runnable -> {
+                Thread thread = new Thread(runnable, "asset-download");
+                // Daemon so a stuck download can never keep the launcher process alive.
+                thread.setDaemon(true);
+                return thread;
+            });
+
+        try {
+            List<Future<?>> pending = new ArrayList<>(total);
+            for (String hash : hashes) {
+                pending.add(pool.submit(() -> {
+                    String shard = hash.substring(0, 2);
+                    downloader.downloadVerified(
+                        RESOURCES_HOST + "/" + shard + "/" + hash,
+                        objectsDir.resolve(shard).resolve(hash),
+                        hash
+                    );
+                    listener.onProgress(completed.incrementAndGet(), total);
+                    return null;
+                }));
+            }
+
+            for (Future<?> future : pending) {
+                try {
+                    future.get();
+                } catch (ExecutionException e) {
+                    Throwable cause = e.getCause();
+                    if (cause instanceof IOException io) {
+                        throw io;
+                    }
+                    throw new IOException("Asset download failed", cause);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Interrupted while downloading assets", e);
+                }
+            }
+        } finally {
+            pool.shutdownNow();
         }
     }
 }

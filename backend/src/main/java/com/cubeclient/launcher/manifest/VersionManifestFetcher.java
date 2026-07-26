@@ -71,7 +71,14 @@ public class VersionManifestFetcher {
                 assetIndexJson.get("sha1").getAsString()
             );
 
-            return new VersionDetail(id, mainClass, clientDownload, libraries, assetIndex);
+            // Absent only in very old manifests; those versions predate 17 and run on 8.
+        int javaMajorVersion = 8;
+        if (root.has("javaVersion")) {
+            javaMajorVersion = root.getAsJsonObject("javaVersion").get("majorVersion").getAsInt();
+        }
+
+        return new VersionDetail(
+            id, mainClass, clientDownload, libraries, assetIndex, javaMajorVersion);
         } catch (RuntimeException e) {
             throw new IOException("Malformed version detail at " + entry.url() + ": " + e.getMessage(), e);
         }

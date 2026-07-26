@@ -21,7 +21,8 @@ class JvmArgsBuilderTest {
             "net.minecraft.client.main.Main",
             new VersionDetail.ClientDownload("https://example.com/client.jar", "abc", 100),
             List.of(new VersionDetail.Library("com/example/foo/1.0/foo-1.0.jar", "https://example.com/foo.jar", "def", 50)),
-            new VersionDetail.AssetIndexRef("17", "https://example.com/17.json", "ghi")
+            new VersionDetail.AssetIndexRef("17", "https://example.com/17.json", "ghi"),
+            21
         );
         Profile profile = new Profile("latest-1.21", "1.21.4", "vanilla", List.of());
         Path sharedRoot = Path.of("C:", "AppData", "CubeClient");
@@ -52,6 +53,8 @@ class JvmArgsBuilderTest {
         assertEquals(
             sharedRoot.resolve("assets").toString(),
             command.get(command.indexOf("--assetsDir") + 1));
+        // The index id must match the file AssetDownloader saved under assets/indexes/.
+        assertEquals("17", command.get(command.indexOf("--assetIndex") + 1));
     }
 
     private static VersionDetail sampleDetail() {
@@ -61,7 +64,8 @@ class JvmArgsBuilderTest {
             new VersionDetail.ClientDownload("https://example.com/client.jar", "abc", 100),
             List.of(new VersionDetail.Library(
                 "com/example/foo/1.0/foo-1.0.jar", "https://example.com/foo.jar", "def", 50)),
-            new VersionDetail.AssetIndexRef("17", "https://example.com/17.json", "ghi")
+            new VersionDetail.AssetIndexRef("17", "https://example.com/17.json", "ghi"),
+            21
         );
     }
 

@@ -32,6 +32,10 @@ public class JvmArgsBuilder {
         command.add(gameDir.toString());
         command.add("--assetsDir");
         command.add(sharedRoot.resolve("assets").toString());
+        // Names which index under assets/indexes/ to read. Without it the game cannot resolve a
+        // single content-addressed asset and starts with no sound and no text.
+        command.add("--assetIndex");
+        command.add(detail.assetIndex().id());
 
         // Identity. Servers validate the access token against Mojang's session service, so an
         // offline session can start the game but cannot join anything.

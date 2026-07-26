@@ -8,6 +8,7 @@ import com.cubeclient.launcher.manifest.VersionDetail;
 import com.cubeclient.launcher.manifest.VersionEntry;
 import com.cubeclient.launcher.manifest.VersionManifestFetcher;
 import com.cubeclient.launcher.profile.Profile;
+import com.cubeclient.launcher.runtime.JreProvisioner;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -17,6 +18,7 @@ public class LaunchCommand {
     private final Downloader downloader;
     private final AssetDownloader assetDownloader;
     private final JvmArgsBuilder argsBuilder;
+    private final JreProvisioner jreProvisioner;
     private final ProcessRunner processRunner;
     private final EventEmitter events;
 
@@ -25,6 +27,7 @@ public class LaunchCommand {
         Downloader downloader,
         AssetDownloader assetDownloader,
         JvmArgsBuilder argsBuilder,
+        JreProvisioner jreProvisioner,
         ProcessRunner processRunner,
         EventEmitter events
     ) {
@@ -32,6 +35,7 @@ public class LaunchCommand {
         this.downloader = downloader;
         this.assetDownloader = assetDownloader;
         this.argsBuilder = argsBuilder;
+        this.jreProvisioner = jreProvisioner;
         this.processRunner = processRunner;
         this.events = events;
     }
@@ -44,7 +48,7 @@ public class LaunchCommand {
      * <p>Downloads MUST land under the same {@code sharedRoot} that {@link JvmArgsBuilder} puts on
      * the classpath. Both take it as an explicit parameter so they cannot disagree.
      */
-    public int run(Profile profile, Path gameDir, Path sharedRoot, Path javaBin, Session session)
+    public int run(Profile profile, Path gameDir, Path sharedRoot, String osName, Session session)
             throws IOException {
         events.progress("manifest", 0);
         var versions = manifestFetcher.fetchVersionList();
@@ -73,6 +77,13 @@ public class LaunchCommand {
                 events.progress("assets", 60 + (completed * 30 / total));
             }
         });
+
+        // Provisioned only after the manifest is read, because the manifest is what says which
+        // Java version this Minecraft version needs. Guessing it from the version number is how
+        // 1.21.4 ended up being handed a Java 17 runtime and dying with UnsupportedClassVersionError.
+        events.progress("runtime", 88);
+        Path javaBin = jreProvisioner.ensureJre(
+            detail.javaMajorVersion(), sharedRoot.resolve("runtimes"), osName);
 
         events.progress("launching", 90);
         var command = argsBuilder.build(profile, detail, gameDir, sharedRoot, javaBin, session);

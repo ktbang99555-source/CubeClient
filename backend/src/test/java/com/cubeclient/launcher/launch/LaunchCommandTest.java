@@ -9,6 +9,7 @@ import com.cubeclient.launcher.manifest.VersionDetail;
 import com.cubeclient.launcher.manifest.VersionEntry;
 import com.cubeclient.launcher.manifest.VersionManifestFetcher;
 import com.cubeclient.launcher.profile.Profile;
+import com.cubeclient.launcher.runtime.JreProvisioner;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -148,16 +149,21 @@ class LaunchCommandTest {
         EventEmitter events = new EventEmitter(new PrintStream(out));
 
         AssetDownloader assetDownloader = new AssetDownloader(fetcher, downloader);
-        LaunchCommand launchCommand = new LaunchCommand(
-            manifestFetcher, downloader, assetDownloader, new JvmArgsBuilder(), processRunner, events);
+        // Returns a path without touching the network; JreProvisioner has its own tests.
+        JreProvisioner jreProvisioner = new JreProvisioner(fetcher, downloader) {
+            @Override
+            public Path ensureJre(int majorVersion, Path runtimesDir, String os) {
+                return runtimesDir.resolve(String.valueOf(majorVersion)).resolve("bin/java");
+            }
+        };
+        LaunchCommand launchCommand = new LaunchCommand(manifestFetcher, downloader, assetDownloader,
+            new JvmArgsBuilder(), jreProvisioner, processRunner, events);
 
         Profile profile = new Profile("latest-1.21", "1.21.4", "vanilla", List.of());
         Path sharedRoot = tempDir;
         Path gameDir = sharedRoot.resolve("instances").resolve("latest-1.21");
-        Path javaBin = sharedRoot.resolve("runtimes/17/bin/java");
-
         int exitCode = launchCommand.run(
-            profile, gameDir, sharedRoot, javaBin, Session.offline(profile.id()));
+            profile, gameDir, sharedRoot, "windows", Session.offline(profile.id()));
 
         assertEquals(0, exitCode);
         assertTrue(processRunner.lastCommand.contains("net.minecraft.client.main.Main"));

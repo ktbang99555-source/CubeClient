@@ -104,19 +104,14 @@ public final class Main {
             var assetDownloader = new AssetDownloader(fetcher, downloader);
             var argsBuilder = new JvmArgsBuilder();
             var processRunner = new RealProcessRunner();
-            var launchCommand = new LaunchCommand(
-                manifestFetcher, downloader, assetDownloader, argsBuilder, processRunner, events);
+            var jreProvisioner = new JreProvisioner(fetcher, downloader);
+            var launchCommand = new LaunchCommand(manifestFetcher, downloader, assetDownloader,
+                argsBuilder, jreProvisioner, processRunner, events);
 
             Path gameDir = appData.resolve("instances").resolve(profile.id());
 
-            // 1.8.9 will not run on a modern JRE and modern versions will not run on 8, so the
-            // runtime is chosen per profile and provisioned rather than taken from PATH.
-            int javaMajorVersion = profile.mcVersion().equals("1.8.9") ? 8 : 17;
-            events.progress("runtime", 0);
-            Path javaBin = new JreProvisioner(fetcher, downloader)
-                .ensureJre(javaMajorVersion, appData.resolve("runtimes"), adoptiumOsName());
-
-            return launchCommand.run(profile, gameDir, appData, javaBin, readSession(profile));
+            return launchCommand.run(
+                profile, gameDir, appData, adoptiumOsName(), readSession(profile));
         } catch (IOException e) {
             events.error("launch", e.getMessage());
             return 1;

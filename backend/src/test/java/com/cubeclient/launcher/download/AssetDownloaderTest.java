@@ -61,8 +61,9 @@ class AssetDownloaderTest {
 
     /** Records destinations and source URLs without doing real checksum verification. */
     static class RecordingDownloader extends Downloader {
-        final List<String> urls = new ArrayList<>();
-        final List<Path> destinations = new ArrayList<>();
+        // Written from the download pool, so both must be thread-safe.
+        final List<String> urls = java.util.Collections.synchronizedList(new ArrayList<>());
+        final List<Path> destinations = java.util.Collections.synchronizedList(new ArrayList<>());
 
         RecordingDownloader(HttpFetcher fetcher) { super(fetcher); }
 
@@ -137,11 +138,14 @@ class AssetDownloaderTest {
         RecordingDownloader downloader = new RecordingDownloader(fetcher);
         AssetDownloader assetDownloader = new AssetDownloader(fetcher, downloader);
 
-        List<String> ticks = new ArrayList<>();
+        List<String> ticks = java.util.Collections.synchronizedList(new ArrayList<>());
         assetDownloader.downloadAssets(indexRef(), tempDir, (done, total) -> ticks.add(done + "/" + total));
 
         // A real index has thousands of objects; without progress the UI looks frozen.
-        assertEquals(List.of("1/2", "2/2"), ticks);
+        // Downloads run concurrently, so assert the set of counts rather than their order — an
+        // order-sensitive assertion here would be flaky rather than strict.
+        assertEquals(java.util.Set.of("1/2", "2/2"), java.util.Set.copyOf(ticks));
+        assertEquals(2, ticks.size());
     }
 
     @Test
