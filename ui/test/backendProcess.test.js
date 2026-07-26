@@ -101,6 +101,26 @@ test('reports backend exit through onEvent', (done) => {
   }, 50);
 });
 
+// The backend jar targets Java 17, but many machines have an older `java` first on PATH
+// (this one has Java 8), which fails with UnsupportedClassVersionError. The caller must be
+// able to point at a specific JRE.
+test('uses the supplied java command instead of bare java', (done) => {
+  const proc = new EventEmitter();
+  proc.stdout = new Readable({ read() {} });
+  const spawnFn = jest.fn(() => proc);
+
+  startBackend('/path/to/backend.jar', 'ping', [], () => {}, spawnFn, 'C:/jdk17/bin/java.exe');
+
+  process.nextTick(() => {
+    expect(spawnFn).toHaveBeenCalledWith('C:/jdk17/bin/java.exe', [
+      '-jar',
+      '/path/to/backend.jar',
+      'ping',
+    ]);
+    done();
+  });
+});
+
 // If the jar is missing or `java` is not on PATH, spawn emits 'error'. Without this the
 // failure is invisible to the user.
 test('reports spawn failure as an error event', (done) => {

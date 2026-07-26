@@ -13,10 +13,13 @@ const { spawn: defaultSpawn } = require('child_process');
  * @param {string[]} args    subcommand arguments
  * @param {(event: object) => void} onEvent  receives each decoded event
  * @param {Function} [spawnFn]  injected for tests
+ * @param {string} [javaCommand]  which JRE to run. The jar targets Java 17, and a machine
+ *   whose PATH `java` is older fails with UnsupportedClassVersionError before emitting
+ *   anything, so this must be overridable.
  * @returns {import('child_process').ChildProcess}
  */
-function startBackend(jarPath, subcommand, args, onEvent, spawnFn = defaultSpawn) {
-  const proc = spawnFn('java', ['-jar', jarPath, subcommand, ...args]);
+function startBackend(jarPath, subcommand, args, onEvent, spawnFn = defaultSpawn, javaCommand = 'java') {
+  const proc = spawnFn(javaCommand, ['-jar', jarPath, subcommand, ...args]);
   const rl = readline.createInterface({ input: proc.stdout });
 
   rl.on('line', (line) => {
