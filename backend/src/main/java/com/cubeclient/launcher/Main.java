@@ -1,6 +1,12 @@
 package com.cubeclient.launcher;
 
+import com.cubeclient.launcher.download.Downloader;
 import com.cubeclient.launcher.events.EventEmitter;
+import com.cubeclient.launcher.http.JavaHttpFetcher;
+import com.cubeclient.launcher.launch.JvmArgsBuilder;
+import com.cubeclient.launcher.launch.LaunchCommand;
+import com.cubeclient.launcher.launch.RealProcessRunner;
+import com.cubeclient.launcher.manifest.VersionManifestFetcher;
 import com.cubeclient.launcher.profile.Profile;
 import com.cubeclient.launcher.profile.ProfileStore;
 
@@ -45,6 +51,9 @@ public final class Main {
             case "list-profiles" -> {
                 return runListProfiles(events);
             }
+            case "launch" -> {
+                return runLaunch(args, events);
+            }
             default -> {
                 events.error("cli", "unknown subcommand: " + args[0]);
                 return 1;
@@ -61,6 +70,44 @@ public final class Main {
             return 0;
         } catch (IOException e) {
             events.error("list-profiles", e.getMessage());
+            return 1;
+        }
+    }
+
+    private static int runLaunch(String[] args, EventEmitter events) {
+        if (args.length < 2) {
+            events.error("cli", "launch requires a profile id argument");
+            return 1;
+        }
+        String profileId = args[1];
+        try {
+            Path appData = appDataDir();
+            ProfileStore profileStore = new ProfileStore(appData.resolve("profiles.json"));
+            Profile profile = profileStore.loadAll().stream()
+                .filter(p -> p.id().equals(profileId))
+                .findFirst()
+                .orElse(null);
+            if (profile == null) {
+                events.error("launch", "unknown profile: " + profileId);
+                return 1;
+            }
+
+            var fetcher = new JavaHttpFetcher();
+            var manifestFetcher = new VersionManifestFetcher(fetcher);
+            var downloader = new Downloader(fetcher);
+            var argsBuilder = new JvmArgsBuilder();
+            var processRunner = new RealProcessRunner();
+            var launchCommand = new LaunchCommand(
+                manifestFetcher, downloader, argsBuilder, processRunner, events);
+
+            Path gameDir = appData.resolve("instances").resolve(profile.id());
+            String javaMajorVersion = profile.mcVersion().equals("1.8.9") ? "8" : "17";
+            Path javaBin = appData.resolve("runtimes").resolve(javaMajorVersion).resolve("bin")
+                .resolve(System.getProperty("os.name").toLowerCase().contains("win") ? "java.exe" : "java");
+
+            return launchCommand.run(profile, gameDir, appData, javaBin);
+        } catch (IOException e) {
+            events.error("launch", e.getMessage());
             return 1;
         }
     }
