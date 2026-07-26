@@ -31,6 +31,17 @@ class LaunchCommandTest {
 
     static class FakeHttpFetcher implements HttpFetcher {
         @Override
+        public HttpFetcher.HttpResult postJsonAllowingErrors(
+                String url, String jsonBody, java.util.Map<String, String> headers) throws java.io.IOException {
+            return new HttpFetcher.HttpResult(200, postJson(url, jsonBody, headers));
+        }
+
+        @Override
+        public HttpFetcher.HttpResult postForm(String url, java.util.Map<String, String> form) {
+            throw new UnsupportedOperationException("not used");
+        }
+
+        @Override
         public String getString(String url) {
             String manifestUrl = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
             if (url.equals(manifestUrl)) {

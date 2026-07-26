@@ -5,6 +5,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -67,6 +69,49 @@ public class JavaHttpFetcher implements HttpFetcher {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Interrupted while downloading " + url, e);
+        }
+    }
+
+    @Override
+    public HttpResult postForm(String url, Map<String, String> form) throws IOException {
+        StringBuilder encoded = new StringBuilder();
+        form.forEach((key, value) -> {
+            if (encoded.length() > 0) {
+                encoded.append('&');
+            }
+            encoded.append(URLEncoder.encode(key, StandardCharsets.UTF_8))
+                .append('=')
+                .append(URLEncoder.encode(value, StandardCharsets.UTF_8));
+        });
+
+        try {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(encoded.toString()))
+                .build();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            // Returns the status rather than throwing: a 400 here is normal protocol traffic
+            // during device-code polling, not a failure.
+            return new HttpResult(response.statusCode(), response.body());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while posting to " + url, e);
+        }
+    }
+
+    @Override
+    public HttpResult postJsonAllowingErrors(String url, String jsonBody, Map<String, String> headers)
+            throws IOException {
+        try {
+            HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody));
+            headers.forEach(builder::header);
+            HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            return new HttpResult(response.statusCode(), response.body());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while posting to " + url, e);
         }
     }
 

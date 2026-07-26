@@ -23,6 +23,17 @@ class AssetDownloaderTest {
 
     /** Serves a canned asset index and records every download it is asked to perform. */
     static class FakeFetcher implements HttpFetcher {
+        @Override
+        public HttpFetcher.HttpResult postJsonAllowingErrors(
+                String url, String jsonBody, java.util.Map<String, String> headers) throws java.io.IOException {
+            return new HttpFetcher.HttpResult(200, postJson(url, jsonBody, headers));
+        }
+
+        @Override
+        public HttpFetcher.HttpResult postForm(String url, java.util.Map<String, String> form) {
+            throw new UnsupportedOperationException("not used");
+        }
+
         final String indexJson;
         FakeFetcher(String indexJson) { this.indexJson = indexJson; }
 

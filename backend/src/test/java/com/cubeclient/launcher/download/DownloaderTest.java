@@ -21,6 +21,17 @@ class DownloaderTest {
     Path tempDir;
 
     static class RecordingFetcher implements HttpFetcher {
+        @Override
+        public HttpFetcher.HttpResult postJsonAllowingErrors(
+                String url, String jsonBody, java.util.Map<String, String> headers) throws java.io.IOException {
+            return new HttpFetcher.HttpResult(200, postJson(url, jsonBody, headers));
+        }
+
+        @Override
+        public HttpFetcher.HttpResult postForm(String url, java.util.Map<String, String> form) {
+            throw new UnsupportedOperationException("not used");
+        }
+
         final List<String> downloadedUrls = new ArrayList<>();
         final String contentToWrite;
 

@@ -40,6 +40,17 @@ class JreProvisionerTest {
 
     /** Serves the Adoptium listing and writes a real zip shaped like an Adoptium JRE archive. */
     static class FakeFetcher implements HttpFetcher {
+        @Override
+        public HttpFetcher.HttpResult postJsonAllowingErrors(
+                String url, String jsonBody, java.util.Map<String, String> headers) throws java.io.IOException {
+            return new HttpFetcher.HttpResult(200, postJson(url, jsonBody, headers));
+        }
+
+        @Override
+        public HttpFetcher.HttpResult postForm(String url, java.util.Map<String, String> form) {
+            throw new UnsupportedOperationException("not used");
+        }
+
         final List<String> requestedUrls = new ArrayList<>();
         final String listing;
 

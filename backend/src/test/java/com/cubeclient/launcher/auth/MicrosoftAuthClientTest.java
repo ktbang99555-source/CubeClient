@@ -13,8 +13,36 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class MicrosoftAuthClientTest {
 
     static class ScriptedFetcher implements HttpFetcher {
+        @Override
+        public HttpFetcher.HttpResult postJsonAllowingErrors(
+                String url, String jsonBody, java.util.Map<String, String> headers) throws java.io.IOException {
+            return new HttpFetcher.HttpResult(200, postJson(url, jsonBody, headers));
+        }
+
+
         String minecraftLoginIdentityToken;
         String profileAuthorizationHeader;
+
+        /**
+         * The two Microsoft OAuth endpoints are form-encoded; the Xbox and Minecraft endpoints
+         * that follow are JSON. Sending JSON to these two is rejected with AADSTS900144.
+         */
+        @Override
+        public HttpResult postForm(String url, Map<String, String> form) {
+            if (url.contains("devicecode")) {
+                return new HttpResult(200, """
+                    { "device_code": "DCODE", "user_code": "ABCD-EFGH",
+                      "verification_uri": "https://microsoft.com/link",
+                      "expires_in": 900, "interval": 5 }
+                    """);
+            }
+            if (url.contains("/token")) {
+                return new HttpResult(200, """
+                    { "access_token": "MS_ACCESS_TOKEN", "token_type": "Bearer" }
+                    """);
+            }
+            throw new IllegalStateException("Unexpected form POST url: " + url);
+        }
 
         @Override
         public String getString(String url) {
@@ -39,18 +67,6 @@ class MicrosoftAuthClientTest {
 
         @Override
         public String postJson(String url, String jsonBody, Map<String, String> headers) throws IOException {
-            if (url.contains("devicecode")) {
-                return """
-                    { "device_code": "DCODE", "user_code": "ABCD-EFGH",
-                      "verification_uri": "https://microsoft.com/devicelogin",
-                      "expires_in": 900, "interval": 5 }
-                    """;
-            }
-            if (url.contains("/token")) {
-                return """
-                    { "access_token": "MS_ACCESS_TOKEN", "token_type": "Bearer" }
-                    """;
-            }
             // Order matters: the XSTS host CONTAINS "xboxlive.com", so it must be matched first
             // or its branch is unreachable and every XSTS call silently gets the XBL response.
             if (url.contains("xsts.auth.xboxlive.com")) {

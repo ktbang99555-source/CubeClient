@@ -15,6 +15,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class VersionManifestFetcherTest {
 
     static class FakeHttpFetcher implements HttpFetcher {
+        @Override
+        public HttpFetcher.HttpResult postJsonAllowingErrors(
+                String url, String jsonBody, java.util.Map<String, String> headers) throws java.io.IOException {
+            return new HttpFetcher.HttpResult(200, postJson(url, jsonBody, headers));
+        }
+
+        @Override
+        public HttpFetcher.HttpResult postForm(String url, java.util.Map<String, String> form) {
+            throw new UnsupportedOperationException("not used");
+        }
+
         private final Map<String, String> responses;
         FakeHttpFetcher(Map<String, String> responses) { this.responses = responses; }
 
