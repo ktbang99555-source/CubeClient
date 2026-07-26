@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -35,6 +36,11 @@ class DownloaderTest {
             downloadedUrls.add(url);
             Files.createDirectories(destination.getParent());
             Files.writeString(destination, contentToWrite);
+        }
+
+        @Override
+        public String postJson(String url, String jsonBody, Map<String, String> headers) throws IOException {
+            throw new UnsupportedOperationException("not used");
         }
     }
 

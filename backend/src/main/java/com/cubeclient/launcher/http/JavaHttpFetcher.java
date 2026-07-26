@@ -7,6 +7,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 
 public class JavaHttpFetcher implements HttpFetcher {
     private final HttpClient client = HttpClient.newHttpClient();
@@ -42,6 +43,24 @@ public class JavaHttpFetcher implements HttpFetcher {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Interrupted while downloading " + url, e);
+        }
+    }
+
+    @Override
+    public String postJson(String url, String jsonBody, Map<String, String> headers) throws IOException {
+        try {
+            HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody));
+            headers.forEach(builder::header);
+            HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() / 100 != 2) {
+                throw new IOException("POST " + url + " returned status " + response.statusCode() + ": " + response.body());
+            }
+            return response.body();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while posting to " + url, e);
         }
     }
 }

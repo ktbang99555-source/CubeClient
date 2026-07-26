@@ -54,6 +54,9 @@ public final class Main {
             case "launch" -> {
                 return runLaunch(args, events);
             }
+            case "login" -> {
+                return runLogin(events);
+            }
             default -> {
                 events.error("cli", "unknown subcommand: " + args[0]);
                 return 1;
@@ -108,6 +111,24 @@ public final class Main {
             return launchCommand.run(profile, gameDir, appData, javaBin);
         } catch (IOException e) {
             events.error("launch", e.getMessage());
+            return 1;
+        }
+    }
+
+    private static int runLogin(EventEmitter events) {
+        try {
+            var fetcher = new com.cubeclient.launcher.http.JavaHttpFetcher();
+            var authClient = new com.cubeclient.launcher.auth.MicrosoftAuthClient(fetcher);
+            var deviceCode = authClient.requestDeviceCode();
+            events.progress("auth_device_code", 0);
+            System.out.println("{\"type\":\"device_code\",\"userCode\":\"" + deviceCode.userCode()
+                + "\",\"verificationUri\":\"" + deviceCode.verificationUri() + "\"}");
+            var result = authClient.pollForMinecraftAuth(deviceCode);
+            System.out.println("{\"type\":\"login_success\",\"username\":\"" + result.username()
+                + "\",\"uuid\":\"" + result.uuid() + "\"}");
+            return 0;
+        } catch (IOException e) {
+            events.error("login", e.getMessage());
             return 1;
         }
     }

@@ -29,6 +29,11 @@ class VersionManifestFetcherTest {
         public void downloadToFile(String url, Path destination) throws IOException {
             throw new UnsupportedOperationException("not used in this test");
         }
+
+        @Override
+        public String postJson(String url, String jsonBody, Map<String, String> headers) throws IOException {
+            throw new UnsupportedOperationException("not used in this test");
+        }
     }
 
     private static final String MANIFEST_URL =
