@@ -1,5 +1,6 @@
 package com.cubeclient.launcher.launch;
 
+import com.cubeclient.launcher.auth.Session;
 import com.cubeclient.launcher.manifest.VersionDetail;
 import com.cubeclient.launcher.profile.Profile;
 
@@ -18,20 +19,31 @@ public class JvmArgsBuilder {
      *                   profile draws from. Passed explicitly rather than derived from {@code gameDir}
      *                   by path arithmetic, so the layout is stated once and cannot drift.
      */
-    public List<String> build(Profile profile, VersionDetail detail, Path gameDir, Path sharedRoot, Path javaBin) {
+    public List<String> build(Profile profile, VersionDetail detail, Path gameDir, Path sharedRoot,
+                              Path javaBin, Session session) {
         List<String> command = new ArrayList<>();
         command.add(javaBin.toString());
         command.add("-cp");
         command.add(buildClasspath(detail, sharedRoot));
         command.add(detail.mainClass());
-        command.add("--username");
-        command.add(profile.id());
         command.add("--version");
         command.add(profile.mcVersion());
         command.add("--gameDir");
         command.add(gameDir.toString());
         command.add("--assetsDir");
         command.add(sharedRoot.resolve("assets").toString());
+
+        // Identity. Servers validate the access token against Mojang's session service, so an
+        // offline session can start the game but cannot join anything.
+        command.add("--username");
+        command.add(session.username());
+        command.add("--uuid");
+        command.add(session.uuid());
+        command.add("--accessToken");
+        command.add(session.accessToken());
+        command.add("--userType");
+        command.add(session.online() ? "msa" : "legacy");
+
         return command;
     }
 

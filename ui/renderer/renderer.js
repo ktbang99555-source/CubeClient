@@ -24,7 +24,13 @@ function renderProfiles(profiles, container) {
 
     const playButton = document.createElement('button');
     playButton.textContent = 'Play';
+    playButton.dataset.action = 'play';
     card.appendChild(playButton);
+
+    const logButton = document.createElement('button');
+    logButton.textContent = 'Show log';
+    logButton.dataset.action = 'log';
+    card.appendChild(logButton);
 
     container.appendChild(card);
   }
@@ -63,10 +69,23 @@ if (typeof window !== 'undefined' && window.cubeclient) {
     progressContainer.appendChild(message);
   };
 
+  const loginButton = document.createElement('button');
+  loginButton.textContent = 'Sign in with Microsoft';
+  loginButton.addEventListener('click', () => window.cubeclient.startLogin());
+  app.insertBefore(loginButton, profilesContainer);
+
+  const accountLabel = document.createElement('div');
+  accountLabel.textContent = 'Not signed in — servers will reject this session.';
+  app.insertBefore(accountLabel, profilesContainer);
+
   profilesContainer.addEventListener('click', (domEvent) => {
     if (domEvent.target.tagName !== 'BUTTON') return;
     const card = domEvent.target.closest('.profile-card');
-    if (card) {
+    if (!card) return;
+
+    if (domEvent.target.dataset.action === 'log') {
+      window.cubeclient.openLog(card.dataset.profileId);
+    } else {
       window.cubeclient.launchProfile(card.dataset.profileId);
     }
   });
@@ -76,6 +95,12 @@ if (typeof window !== 'undefined' && window.cubeclient) {
       renderProfiles(event.profiles, profilesContainer);
     } else if (event.type === 'progress') {
       renderProgress(event.stage, event.percent, progressContainer);
+    } else if (event.type === 'device_code') {
+      // The user has to type this code at the Microsoft page themselves.
+      showMessage(`Go to ${event.verificationUri} and enter code ${event.userCode}`);
+    } else if (event.type === 'login_success') {
+      accountLabel.textContent = `Signed in as ${event.username}`;
+      showMessage('Signed in.');
     } else if (event.type === 'error') {
       showMessage(`Error (${event.stage}): ${event.message}`);
     } else if (event.type === 'backend_exit' && event.code !== 0) {

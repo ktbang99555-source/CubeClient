@@ -1,8 +1,13 @@
 package com.cubeclient.launcher.launch;
 
 import java.io.IOException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 public class RealProcessRunner implements ProcessRunner {
@@ -21,12 +26,39 @@ public class RealProcessRunner implements ProcessRunner {
     @Override
     public Process start(List<String> command, Path workingDir) throws IOException {
         Files.createDirectories(workingDir);
-        Path logFile = workingDir.resolve("logs").resolve("latest.log");
-        Files.createDirectories(logFile.getParent());
+        Path logsDir = workingDir.resolve("logs");
+        Files.createDirectories(logsDir);
+
+        Path logFile = logsDir.resolve("latest.log");
+        rotate(logFile);
+
         return new ProcessBuilder(command)
             .directory(workingDir.toFile())
             .redirectErrorStream(true)
             .redirectOutput(ProcessBuilder.Redirect.to(logFile.toFile()))
             .start();
+    }
+
+    /**
+     * Moves the previous run's log aside before it is truncated.
+     *
+     * <p>Without this, the common case of "the game crashed, so I launched it again to see what
+     * happened" destroys the very log the user needs — the redirect truncates on open.
+     */
+    private void rotate(Path logFile) throws IOException {
+        if (Files.notExists(logFile)) {
+            return;
+        }
+        String stamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
+            .withZone(ZoneId.systemDefault())
+            .format(Instant.now());
+        Path rotated = logFile.resolveSibling("game-" + stamp + ".log");
+        try {
+            Files.move(logFile, rotated);
+        } catch (FileAlreadyExistsException e) {
+            // Two launches inside the same second: keeping the newer log matters more than
+            // keeping both, and failing the launch over a log file would be worse.
+            Files.move(logFile, rotated, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 }

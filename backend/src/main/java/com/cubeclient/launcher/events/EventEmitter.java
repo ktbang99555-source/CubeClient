@@ -38,6 +38,22 @@ public class EventEmitter {
         write(event);
     }
 
+    /**
+     * Carries the Minecraft access token to the Electron parent so it can be encrypted.
+     *
+     * <p>This is the one event that contains a credential. It travels over the private stdout
+     * pipe between parent and child, is never written to a file by the backend, and must be
+     * consumed by the Electron main process rather than forwarded to the renderer.
+     */
+    public void authResult(String username, String uuid, String accessToken) {
+        JsonObject event = new JsonObject();
+        event.addProperty("type", "auth_result");
+        event.addProperty("username", username);
+        event.addProperty("uuid", uuid);
+        event.addProperty("accessToken", accessToken);
+        write(event);
+    }
+
     public void launched() {
         JsonObject event = new JsonObject();
         event.addProperty("type", "launched");

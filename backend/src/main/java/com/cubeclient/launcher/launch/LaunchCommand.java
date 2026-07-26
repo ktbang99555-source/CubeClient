@@ -1,5 +1,6 @@
 package com.cubeclient.launcher.launch;
 
+import com.cubeclient.launcher.auth.Session;
 import com.cubeclient.launcher.download.AssetDownloader;
 import com.cubeclient.launcher.download.Downloader;
 import com.cubeclient.launcher.events.EventEmitter;
@@ -43,7 +44,8 @@ public class LaunchCommand {
      * <p>Downloads MUST land under the same {@code sharedRoot} that {@link JvmArgsBuilder} puts on
      * the classpath. Both take it as an explicit parameter so they cannot disagree.
      */
-    public int run(Profile profile, Path gameDir, Path sharedRoot, Path javaBin) throws IOException {
+    public int run(Profile profile, Path gameDir, Path sharedRoot, Path javaBin, Session session)
+            throws IOException {
         events.progress("manifest", 0);
         var versions = manifestFetcher.fetchVersionList();
         VersionEntry entry = manifestFetcher.findVersion(versions, profile.mcVersion());
@@ -73,7 +75,7 @@ public class LaunchCommand {
         });
 
         events.progress("launching", 90);
-        var command = argsBuilder.build(profile, detail, gameDir, sharedRoot, javaBin);
+        var command = argsBuilder.build(profile, detail, gameDir, sharedRoot, javaBin, session);
         Process process = processRunner.start(command, gameDir);
         events.launched();
 

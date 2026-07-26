@@ -1,5 +1,6 @@
 package com.cubeclient.launcher;
 
+import com.cubeclient.launcher.auth.Session;
 import com.cubeclient.launcher.download.AssetDownloader;
 import com.cubeclient.launcher.download.Downloader;
 import com.cubeclient.launcher.events.EventEmitter;
@@ -115,7 +116,7 @@ public final class Main {
             Path javaBin = new JreProvisioner(fetcher, downloader)
                 .ensureJre(javaMajorVersion, appData.resolve("runtimes"), adoptiumOsName());
 
-            return launchCommand.run(profile, gameDir, appData, javaBin);
+            return launchCommand.run(profile, gameDir, appData, javaBin, readSession(profile));
         } catch (IOException e) {
             events.error("launch", e.getMessage());
             return 1;
@@ -131,12 +132,41 @@ public final class Main {
             System.out.println("{\"type\":\"device_code\",\"userCode\":\"" + deviceCode.userCode()
                 + "\",\"verificationUri\":\"" + deviceCode.verificationUri() + "\"}");
             var result = authClient.pollForMinecraftAuth(deviceCode);
-            System.out.println("{\"type\":\"login_success\",\"username\":\"" + result.username()
-                + "\",\"uuid\":\"" + result.uuid() + "\"}");
+            // Distinct event type, not "login_success": Electron consumes this one to encrypt the
+            // token and must never forward it to the renderer. Keeping the credential on its own
+            // event type means the forwarding rule is an allowlist, not a field-stripping step
+            // that is easy to forget.
+            events.authResult(result.username(), result.uuid(), result.accessToken());
             return 0;
         } catch (IOException e) {
             events.error("login", e.getMessage());
             return 1;
+        }
+    }
+
+    /**
+     * Reads the account to launch as from a single JSON line on stdin.
+     *
+     * <p>The token arrives over stdin rather than as a command-line argument because arguments
+     * are visible to any process that can list the process table. Electron holds the encrypted
+     * token and writes this line; when nothing is piped in, the launch falls back to an offline
+     * session that starts the game but cannot join servers.
+     */
+    private static Session readSession(Profile profile) throws IOException {
+        String line = new java.io.BufferedReader(
+            new java.io.InputStreamReader(System.in, java.nio.charset.StandardCharsets.UTF_8)).readLine();
+        if (line == null || line.isBlank()) {
+            return Session.offline(profile.id());
+        }
+        try {
+            var json = com.google.gson.JsonParser.parseString(line).getAsJsonObject();
+            return Session.online(
+                json.get("username").getAsString(),
+                json.get("uuid").getAsString(),
+                json.get("accessToken").getAsString());
+        } catch (RuntimeException e) {
+            // Deliberately does not echo the line back — it holds a credential.
+            throw new IOException("Malformed session on stdin", e);
         }
     }
 

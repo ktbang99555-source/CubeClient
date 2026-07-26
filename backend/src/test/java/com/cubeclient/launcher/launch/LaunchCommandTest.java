@@ -1,5 +1,6 @@
 package com.cubeclient.launcher.launch;
 
+import com.cubeclient.launcher.auth.Session;
 import com.cubeclient.launcher.download.AssetDownloader;
 import com.cubeclient.launcher.download.Downloader;
 import com.cubeclient.launcher.events.EventEmitter;
@@ -144,7 +145,8 @@ class LaunchCommandTest {
         Path gameDir = sharedRoot.resolve("instances").resolve("latest-1.21");
         Path javaBin = sharedRoot.resolve("runtimes/17/bin/java");
 
-        int exitCode = launchCommand.run(profile, gameDir, sharedRoot, javaBin);
+        int exitCode = launchCommand.run(
+            profile, gameDir, sharedRoot, javaBin, Session.offline(profile.id()));
 
         assertEquals(0, exitCode);
         assertTrue(processRunner.lastCommand.contains("net.minecraft.client.main.Main"));

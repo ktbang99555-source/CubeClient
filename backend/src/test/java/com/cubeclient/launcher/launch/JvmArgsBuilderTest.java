@@ -1,5 +1,6 @@
 package com.cubeclient.launcher.launch;
 
+import com.cubeclient.launcher.auth.Session;
 import com.cubeclient.launcher.manifest.VersionDetail;
 import com.cubeclient.launcher.profile.Profile;
 import org.junit.jupiter.api.Test;
@@ -27,7 +28,8 @@ class JvmArgsBuilderTest {
         Path gameDir = sharedRoot.resolve(Path.of("instances", "latest-1.21"));
         Path javaBin = sharedRoot.resolve(Path.of("runtimes", "17", "bin", "java.exe"));
 
-        List<String> command = new JvmArgsBuilder().build(profile, detail, gameDir, sharedRoot, javaBin);
+        List<String> command = new JvmArgsBuilder()
+            .build(profile, detail, gameDir, sharedRoot, javaBin, Session.offline(profile.id()));
 
         assertEquals(javaBin.toString(), command.get(0));
         assertEquals("-cp", command.get(1));
@@ -50,5 +52,50 @@ class JvmArgsBuilderTest {
         assertEquals(
             sharedRoot.resolve("assets").toString(),
             command.get(command.indexOf("--assetsDir") + 1));
+    }
+
+    private static VersionDetail sampleDetail() {
+        return new VersionDetail(
+            "1.21.4",
+            "net.minecraft.client.main.Main",
+            new VersionDetail.ClientDownload("https://example.com/client.jar", "abc", 100),
+            List.of(new VersionDetail.Library(
+                "com/example/foo/1.0/foo-1.0.jar", "https://example.com/foo.jar", "def", 50)),
+            new VersionDetail.AssetIndexRef("17", "https://example.com/17.json", "ghi")
+        );
+    }
+
+    // Without these the game runs as an unauthenticated placeholder and every server,
+    // Hypixel included, rejects it.
+    @Test
+    void passesTheSessionIdentityToTheGame() {
+        Path sharedRoot = Path.of("C:", "AppData", "CubeClient");
+        List<String> command = new JvmArgsBuilder().build(
+            new Profile("latest-1.21", "1.21.4", "vanilla", List.of()),
+            sampleDetail(),
+            sharedRoot.resolve(Path.of("instances", "latest-1.21")),
+            sharedRoot,
+            sharedRoot.resolve(Path.of("runtimes", "17", "bin", "java.exe")),
+            Session.online("Steve", "abc123uuid", "MC_TOKEN"));
+
+        assertEquals("Steve", command.get(command.indexOf("--username") + 1));
+        assertEquals("abc123uuid", command.get(command.indexOf("--uuid") + 1));
+        assertEquals("MC_TOKEN", command.get(command.indexOf("--accessToken") + 1));
+        assertEquals("msa", command.get(command.indexOf("--userType") + 1));
+    }
+
+    @Test
+    void anOfflineSessionIsNotLabelledAsAMicrosoftAccount() {
+        Path sharedRoot = Path.of("C:", "AppData", "CubeClient");
+        List<String> command = new JvmArgsBuilder().build(
+            new Profile("latest-1.21", "1.21.4", "vanilla", List.of()),
+            sampleDetail(),
+            sharedRoot.resolve(Path.of("instances", "latest-1.21")),
+            sharedRoot,
+            sharedRoot.resolve(Path.of("runtimes", "17", "bin", "java.exe")),
+            Session.offline("manual-test"));
+
+        assertEquals("manual-test", command.get(command.indexOf("--username") + 1));
+        assertEquals("legacy", command.get(command.indexOf("--userType") + 1));
     }
 }
