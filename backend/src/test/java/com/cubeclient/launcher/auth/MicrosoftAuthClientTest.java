@@ -13,10 +13,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class MicrosoftAuthClientTest {
 
     static class ScriptedFetcher implements HttpFetcher {
+        /** Xbox and Minecraft steps go through here so the client can read refusal bodies. */
         @Override
-        public HttpFetcher.HttpResult postJsonAllowingErrors(
-                String url, String jsonBody, java.util.Map<String, String> headers) throws java.io.IOException {
-            return new HttpFetcher.HttpResult(200, postJson(url, jsonBody, headers));
+        public HttpResult postJsonAllowingErrors(
+                String url, String jsonBody, Map<String, String> headers) throws IOException {
+            return new HttpResult(200, postJson(url, jsonBody, headers));
         }
 
 

@@ -161,23 +161,69 @@ public class MicrosoftAuthClient {
         String body = "{\"Properties\":{\"AuthMethod\":\"RPS\",\"SiteName\":\"user.auth.xboxlive.com\","
             + "\"RpsTicket\":\"d=" + msAccessToken + "\"},\"RelyingParty\":\"http://auth.xboxlive.com\","
             + "\"TokenType\":\"JWT\"}";
-        String response = fetcher.postJson(XBL_AUTH_URL, body, Map.of());
-        return parseXboxAuth(response);
+        var response = fetcher.postJsonAllowingErrors(XBL_AUTH_URL, body, Map.of());
+        if (response.statusCode() / 100 != 2) {
+            throw new IOException(describeXboxRefusal("Xbox Live", response.statusCode(), response.body()));
+        }
+        return parseXboxAuth(response.body(), XBL_AUTH_URL);
     }
 
     private XboxAuth authorizeWithXsts(String xblToken) throws IOException {
         String body = "{\"Properties\":{\"SandboxId\":\"RETAIL\",\"UserTokens\":[\"" + xblToken + "\"]},"
             + "\"RelyingParty\":\"rp://api.minecraftservices.com/\",\"TokenType\":\"JWT\"}";
-        String response = fetcher.postJson(XSTS_AUTH_URL, body, Map.of());
-        return parseXboxAuth(response);
+        var response = fetcher.postJsonAllowingErrors(XSTS_AUTH_URL, body, Map.of());
+        if (response.statusCode() / 100 != 2) {
+            throw new IOException(describeXboxRefusal("XSTS", response.statusCode(), response.body()));
+        }
+        return parseXboxAuth(response.body(), XSTS_AUTH_URL);
     }
 
-    private XboxAuth parseXboxAuth(String response) {
-        JsonObject json = JsonParser.parseString(response).getAsJsonObject();
-        String token = json.get("Token").getAsString();
-        String userHash = json.getAsJsonObject("DisplayClaims")
-            .getAsJsonArray("xui").get(0).getAsJsonObject().get("uhs").getAsString();
-        return new XboxAuth(token, userHash);
+    /**
+     * Turns an Xbox refusal into something the person signing in can act on.
+     *
+     * <p>Xbox answers a rejected authorisation with HTTP 401 and an {@code XErr} number that says
+     * exactly what is wrong with the account. Reporting only "returned status 401" sends the user
+     * looking for a bug in the launcher when the fix is on their Microsoft account.
+     *
+     * <p>The {@code XErr} number and Xbox's own redirect URL are diagnostics, not credentials.
+     */
+    private String describeXboxRefusal(String stage, int statusCode, String body) {
+        long xErr = 0;
+        try {
+            JsonObject json = JsonParser.parseString(body).getAsJsonObject();
+            if (json.has("XErr")) {
+                xErr = json.get("XErr").getAsLong();
+            }
+        } catch (RuntimeException ignored) {
+            // Non-JSON body; the status code is all there is.
+        }
+
+        String advice = switch ((int) xErr) {
+            case 0 -> "";
+            // Documented Xbox authorisation failures.
+            case (int) 2148916233L -> " This Microsoft account has no Xbox profile. "
+                + "Sign in once at https://www.xbox.com to create one, then try again.";
+            case (int) 2148916235L -> " Xbox Live is not available in this account's country or region.";
+            case (int) 2148916236L, (int) 2148916237L ->
+                " This account needs adult verification before it can be used.";
+            case (int) 2148916238L -> " This account belongs to someone under 18. "
+                + "An adult must add it to a Microsoft Family group before it can sign in.";
+            default -> " Xbox error code " + xErr + ".";
+        };
+
+        return "Sign-in was refused at the " + stage + " step (HTTP " + statusCode + ")." + advice;
+    }
+
+    private XboxAuth parseXboxAuth(String response, String url) throws IOException {
+        JsonObject json = parseOrThrow(response, url);
+        try {
+            String token = json.get("Token").getAsString();
+            String userHash = json.getAsJsonObject("DisplayClaims")
+                .getAsJsonArray("xui").get(0).getAsJsonObject().get("uhs").getAsString();
+            return new XboxAuth(token, userHash);
+        } catch (RuntimeException e) {
+            throw new IOException("Unexpected response shape from " + url, e);
+        }
     }
 
     private String loginWithXbox(String userHash, String xstsToken) throws IOException {
