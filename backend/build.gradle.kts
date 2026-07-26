@@ -16,6 +16,10 @@ repositories {
 dependencies {
     implementation("com.google.code.gson:gson:2.11.0")
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+    // Required explicitly: Gradle 8.x deprecates auto-loading the test framework's
+    // runtime, and omitting this makes every build print a "Deprecated Gradle
+    // features were used in this build" warning.
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 application {
