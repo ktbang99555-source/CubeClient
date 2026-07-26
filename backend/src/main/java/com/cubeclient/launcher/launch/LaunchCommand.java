@@ -1,5 +1,6 @@
 package com.cubeclient.launcher.launch;
 
+import com.cubeclient.launcher.download.AssetDownloader;
 import com.cubeclient.launcher.download.Downloader;
 import com.cubeclient.launcher.events.EventEmitter;
 import com.cubeclient.launcher.manifest.VersionDetail;
@@ -13,6 +14,7 @@ import java.nio.file.Path;
 public class LaunchCommand {
     private final VersionManifestFetcher manifestFetcher;
     private final Downloader downloader;
+    private final AssetDownloader assetDownloader;
     private final JvmArgsBuilder argsBuilder;
     private final ProcessRunner processRunner;
     private final EventEmitter events;
@@ -20,12 +22,14 @@ public class LaunchCommand {
     public LaunchCommand(
         VersionManifestFetcher manifestFetcher,
         Downloader downloader,
+        AssetDownloader assetDownloader,
         JvmArgsBuilder argsBuilder,
         ProcessRunner processRunner,
         EventEmitter events
     ) {
         this.manifestFetcher = manifestFetcher;
         this.downloader = downloader;
+        this.assetDownloader = assetDownloader;
         this.argsBuilder = argsBuilder;
         this.processRunner = processRunner;
         this.events = events;
@@ -55,9 +59,18 @@ public class LaunchCommand {
             );
         }
 
-        events.progress("client_jar", 60);
+        events.progress("client_jar", 50);
         Path clientJar = sharedRoot.resolve(Path.of("versions", detail.id(), detail.id() + ".jar"));
         downloader.downloadVerified(detail.clientDownload().url(), clientJar, detail.clientDownload().sha1());
+
+        // Assets are thousands of small files and dominate a first launch, so this stage reports
+        // incremental progress rather than a single jump.
+        events.progress("assets", 60);
+        assetDownloader.downloadAssets(detail.assetIndex(), sharedRoot, (completed, total) -> {
+            if (total > 0) {
+                events.progress("assets", 60 + (completed * 30 / total));
+            }
+        });
 
         events.progress("launching", 90);
         var command = argsBuilder.build(profile, detail, gameDir, sharedRoot, javaBin);

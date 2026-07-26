@@ -1,5 +1,6 @@
 package com.cubeclient.launcher.launch;
 
+import com.cubeclient.launcher.download.AssetDownloader;
 import com.cubeclient.launcher.download.Downloader;
 import com.cubeclient.launcher.events.EventEmitter;
 import com.cubeclient.launcher.http.HttpFetcher;
@@ -35,6 +36,17 @@ class LaunchCommandTest {
                 return """
                     { "latest": {"release":"1.21.4","snapshot":"1.21.4"},
                       "versions": [ { "id": "1.21.4", "type": "release", "url": "https://example.com/1.21.4.json" } ] }
+                    """;
+            }
+            if (url.equals("https://example.com/17.json")) {
+                return """
+                    {
+                      "objects": {
+                        "minecraft/lang/en_us.json": {
+                          "hash": "abcdef0123456789abcdef0123456789abcdef01", "size": 10
+                        }
+                      }
+                    }
                     """;
             }
             return """
@@ -123,8 +135,9 @@ class LaunchCommandTest {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         EventEmitter events = new EventEmitter(new PrintStream(out));
 
+        AssetDownloader assetDownloader = new AssetDownloader(fetcher, downloader);
         LaunchCommand launchCommand = new LaunchCommand(
-            manifestFetcher, downloader, new JvmArgsBuilder(), processRunner, events);
+            manifestFetcher, downloader, assetDownloader, new JvmArgsBuilder(), processRunner, events);
 
         Profile profile = new Profile("latest-1.21", "1.21.4", "vanilla", List.of());
         Path sharedRoot = tempDir;
@@ -141,21 +154,33 @@ class LaunchCommandTest {
         assertEquals(
             List.of(
                 sharedRoot.resolve(Path.of("libraries", "com", "example", "foo", "1.0", "foo-1.0.jar")),
-                sharedRoot.resolve(Path.of("versions", "1.21.4", "1.21.4.jar"))
+                sharedRoot.resolve(Path.of("versions", "1.21.4", "1.21.4.jar")),
+                // Assets are what make the launch actually playable — sounds and language files.
+                sharedRoot.resolve(Path.of(
+                    "assets", "objects", "ab", "abcdef0123456789abcdef0123456789abcdef01"))
             ),
             downloader.destinations);
 
-        // The classpath the game is launched with must point at those same downloaded files.
+        // The classpath must point at the code artifacts. Assets are NOT classpath entries —
+        // the game finds them through --assetsDir, so exclude the asset object here.
         String classpath = processRunner.lastCommand.get(processRunner.lastCommand.indexOf("-cp") + 1);
-        for (Path destination : downloader.destinations) {
+        for (Path destination : downloader.destinations.subList(0, 2)) {
             assertTrue(classpath.contains(destination.toString()),
                 "classpath is missing downloaded file " + destination);
         }
+
+        // The game reads the asset index off disk at startup; it must be saved, and --assetsDir
+        // must point at the tree that holds it.
+        assertTrue(Files.exists(sharedRoot.resolve(Path.of("assets", "indexes", "17.json"))));
+        assertEquals(
+            sharedRoot.resolve("assets").toString(),
+            processRunner.lastCommand.get(processRunner.lastCommand.indexOf("--assetsDir") + 1));
 
         String eventLog = out.toString();
         assertTrue(eventLog.contains("\"stage\":\"manifest\""));
         assertTrue(eventLog.contains("\"stage\":\"libraries\""));
         assertTrue(eventLog.contains("\"stage\":\"client_jar\""));
+        assertTrue(eventLog.contains("\"stage\":\"assets\""));
         assertTrue(eventLog.contains("\"type\":\"launched\""));
         assertTrue(eventLog.contains("\"type\":\"exited\""));
     }

@@ -1,5 +1,6 @@
 package com.cubeclient.launcher;
 
+import com.cubeclient.launcher.download.AssetDownloader;
 import com.cubeclient.launcher.download.Downloader;
 import com.cubeclient.launcher.events.EventEmitter;
 import com.cubeclient.launcher.http.JavaHttpFetcher;
@@ -98,10 +99,11 @@ public final class Main {
             var fetcher = new JavaHttpFetcher();
             var manifestFetcher = new VersionManifestFetcher(fetcher);
             var downloader = new Downloader(fetcher);
+            var assetDownloader = new AssetDownloader(fetcher, downloader);
             var argsBuilder = new JvmArgsBuilder();
             var processRunner = new RealProcessRunner();
             var launchCommand = new LaunchCommand(
-                manifestFetcher, downloader, argsBuilder, processRunner, events);
+                manifestFetcher, downloader, assetDownloader, argsBuilder, processRunner, events);
 
             Path gameDir = appData.resolve("instances").resolve(profile.id());
             String javaMajorVersion = profile.mcVersion().equals("1.8.9") ? "8" : "17";
