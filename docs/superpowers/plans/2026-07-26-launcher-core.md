@@ -1840,6 +1840,7 @@ import java.util.Map;
 
 public interface HttpFetcher {
     String getString(String url) throws IOException;
+    String getString(String url, Map<String, String> headers) throws IOException;
     void downloadToFile(String url, Path destination) throws IOException;
     String postJson(String url, String jsonBody, Map<String, String> headers) throws IOException;
 }
@@ -1847,6 +1848,24 @@ public interface HttpFetcher {
 
 Modify `backend/src/main/java/com/cubeclient/launcher/http/JavaHttpFetcher.java` — add the new method and update the class to implement it:
 ```java
+    @Override
+    public String getString(String url, Map<String, String> headers) throws IOException {
+        try {
+            HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url)).GET();
+            headers.forEach(builder::header);
+            HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                // Deliberately omits the response body: these endpoints are authenticated and their
+                // error payloads are not guaranteed to be free of sensitive material.
+                throw new IOException("GET " + url + " returned status " + response.statusCode());
+            }
+            return response.body();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while fetching " + url, e);
+        }
+    }
+
     @Override
     public String postJson(String url, String jsonBody, Map<String, String> headers) throws IOException {
         try {
@@ -1856,7 +1875,10 @@ Modify `backend/src/main/java/com/cubeclient/launcher/http/JavaHttpFetcher.java`
             headers.forEach(builder::header);
             HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() / 100 != 2) {
-                throw new IOException("POST " + url + " returned status " + response.statusCode() + ": " + response.body());
+                // Status only, never the body: this method carries auth tokens to identity
+                // providers, and their error payloads are echoed straight into the user-visible
+                // error event. Keep credential material out of it.
+                throw new IOException("POST " + url + " returned status " + response.statusCode());
             }
             return response.body();
         } catch (InterruptedException e) {
@@ -1874,6 +1896,7 @@ Add `import java.util.Map;` to the top of the file.
 package com.cubeclient.launcher.auth;
 
 import com.cubeclient.launcher.http.HttpFetcher;
+import com.google.gson.JsonParser;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -1885,9 +1908,23 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class MicrosoftAuthClientTest {
 
     static class ScriptedFetcher implements HttpFetcher {
+        String minecraftLoginIdentityToken;
+        String profileAuthorizationHeader;
+
         @Override
         public String getString(String url) {
             throw new UnsupportedOperationException("not used");
+        }
+
+        @Override
+        public String getString(String url, Map<String, String> headers) {
+            if (url.contains("minecraft/profile")) {
+                profileAuthorizationHeader = headers.get("Authorization");
+                return """
+                    { "id": "abc123uuid", "name": "Steve" }
+                    """;
+            }
+            throw new IllegalStateException("Unexpected authenticated GET url: " + url);
         }
 
         @Override
@@ -1909,17 +1946,22 @@ class MicrosoftAuthClientTest {
                     { "access_token": "MS_ACCESS_TOKEN", "token_type": "Bearer" }
                     """;
             }
-            if (url.contains("xboxlive.com")) {
-                return """
-                    { "Token": "XBL_TOKEN", "DisplayClaims": { "xui": [ { "uhs": "USER_HASH" } ] } }
-                    """;
-            }
+            // Order matters: the XSTS host CONTAINS "xboxlive.com", so it must be matched first
+            // or its branch is unreachable and every XSTS call silently gets the XBL response.
             if (url.contains("xsts.auth.xboxlive.com")) {
                 return """
-                    { "Token": "XSTS_TOKEN", "DisplayClaims": { "xui": [ { "uhs": "USER_HASH" } ] } }
+                    { "Token": "XSTS_TOKEN", "DisplayClaims": { "xui": [ { "uhs": "XSTS_USER_HASH" } ] } }
+                    """;
+            }
+            if (url.contains("user.auth.xboxlive.com")) {
+                return """
+                    { "Token": "XBL_TOKEN", "DisplayClaims": { "xui": [ { "uhs": "XBL_USER_HASH" } ] } }
                     """;
             }
             if (url.contains("login_with_xbox")) {
+                // Capture the identity token so the test can prove which token/hash pair was used.
+                minecraftLoginIdentityToken =
+                    JsonParser.parseString(jsonBody).getAsJsonObject().get("identityToken").getAsString();
                 return """
                     { "access_token": "MC_ACCESS_TOKEN" }
                     """;
@@ -1930,14 +1972,8 @@ class MicrosoftAuthClientTest {
 
     @Test
     void pollForMinecraftAuthChainsAllStepsAndReturnsResult() throws IOException {
-        MicrosoftAuthClient client = new MicrosoftAuthClient(new ScriptedFetcher()) {
-            @Override
-            protected String fetchMinecraftProfile(String minecraftAccessToken) {
-                return """
-                    { "id": "abc123uuid", "name": "Steve" }
-                    """;
-            }
-        };
+        ScriptedFetcher fetcher = new ScriptedFetcher();
+        MicrosoftAuthClient client = new MicrosoftAuthClient(fetcher);
 
         MicrosoftAuthClient.DeviceCodeResponse deviceCode = client.requestDeviceCode();
         assertEquals("ABCD-EFGH", deviceCode.userCode());
@@ -1947,6 +1983,14 @@ class MicrosoftAuthClientTest {
         assertEquals("MC_ACCESS_TOKEN", result.accessToken());
         assertEquals("abc123uuid", result.uuid());
         assertEquals("Steve", result.username());
+
+        // The identity token must be built from the XSTS token and XSTS user hash — NOT the XBL
+        // ones. Distinct canned values make a swapped-step regression fail here instead of passing
+        // silently.
+        assertEquals("XBL3.0 x=XSTS_USER_HASH;XSTS_TOKEN", fetcher.minecraftLoginIdentityToken);
+
+        // The profile must be fetched with an authenticated GET carrying the Minecraft token.
+        assertEquals("Bearer MC_ACCESS_TOKEN", fetcher.profileAuthorizationHeader);
     }
 }
 ```
@@ -2062,13 +2106,18 @@ public class MicrosoftAuthClient {
         );
     }
 
-    protected String fetchMinecraftProfile(String minecraftAccessToken) throws IOException {
-        return fetcher.postJson(MC_PROFILE_URL, "", Map.of("Authorization", "Bearer " + minecraftAccessToken));
+    /**
+     * The Minecraft Services profile endpoint is a GET with a bearer header — not a POST.
+     * Sending POST here returns an error from the live API even when every preceding step
+     * succeeded, so this must stay a GET.
+     */
+    private String fetchMinecraftProfile(String minecraftAccessToken) throws IOException {
+        return fetcher.getString(MC_PROFILE_URL, Map.of("Authorization", "Bearer " + minecraftAccessToken));
     }
 }
 ```
 
-Note: `fetchMinecraftProfile` is `protected` and overridden in the test because it's a GET-with-auth-header call and `HttpFetcher` doesn't yet support authenticated GETs — this keeps the test focused on the chaining logic rather than adding a fourth HTTP method to the interface for one call site. If a later task needs authenticated GET generally, extend `HttpFetcher` then and remove this seam.
+Note: `fetchMinecraftProfile` is `private` and needs no test seam, because `HttpFetcher` carries an authenticated-GET overload (`getString(String, Map)`) that the scripted fake implements like any other call. An earlier draft made this a POST through `postJson` with a `protected` override in the test; that hid a real bug, since the live endpoint only accepts GET.
 
 - [ ] **Step 5: Run test to verify it passes**
 
