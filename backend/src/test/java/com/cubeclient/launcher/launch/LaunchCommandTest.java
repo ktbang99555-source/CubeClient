@@ -61,6 +61,11 @@ class LaunchCommandTest {
         }
 
         @Override
+        public String getString(String url, Map<String, String> headers) {
+            throw new UnsupportedOperationException("not used");
+        }
+
+        @Override
         public void downloadToFile(String url, Path destination) throws IOException {
             Files.createDirectories(destination.getParent());
             Files.writeString(destination, "fake-jar-bytes");

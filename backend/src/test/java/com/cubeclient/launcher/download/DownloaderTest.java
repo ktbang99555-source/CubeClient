@@ -32,6 +32,11 @@ class DownloaderTest {
         }
 
         @Override
+        public String getString(String url, Map<String, String> headers) {
+            throw new UnsupportedOperationException("not used");
+        }
+
+        @Override
         public void downloadToFile(String url, Path destination) throws IOException {
             downloadedUrls.add(url);
             Files.createDirectories(destination.getParent());

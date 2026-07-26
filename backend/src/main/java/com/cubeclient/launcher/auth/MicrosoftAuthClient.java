@@ -100,7 +100,12 @@ public class MicrosoftAuthClient {
         );
     }
 
-    protected String fetchMinecraftProfile(String minecraftAccessToken) throws IOException {
-        return fetcher.postJson(MC_PROFILE_URL, "", Map.of("Authorization", "Bearer " + minecraftAccessToken));
+    /**
+     * The Minecraft Services profile endpoint is a GET with a bearer header — not a POST.
+     * Sending POST here returns an error from the live API even when every preceding step
+     * succeeded, so this must stay a GET.
+     */
+    private String fetchMinecraftProfile(String minecraftAccessToken) throws IOException {
+        return fetcher.getString(MC_PROFILE_URL, Map.of("Authorization", "Bearer " + minecraftAccessToken));
     }
 }

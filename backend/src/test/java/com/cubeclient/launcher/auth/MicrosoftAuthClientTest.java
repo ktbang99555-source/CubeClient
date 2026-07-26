@@ -1,6 +1,7 @@
 package com.cubeclient.launcher.auth;
 
 import com.cubeclient.launcher.http.HttpFetcher;
+import com.google.gson.JsonParser;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -12,9 +13,23 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class MicrosoftAuthClientTest {
 
     static class ScriptedFetcher implements HttpFetcher {
+        String minecraftLoginIdentityToken;
+        String profileAuthorizationHeader;
+
         @Override
         public String getString(String url) {
             throw new UnsupportedOperationException("not used");
+        }
+
+        @Override
+        public String getString(String url, Map<String, String> headers) {
+            if (url.contains("minecraft/profile")) {
+                profileAuthorizationHeader = headers.get("Authorization");
+                return """
+                    { "id": "abc123uuid", "name": "Steve" }
+                    """;
+            }
+            throw new IllegalStateException("Unexpected authenticated GET url: " + url);
         }
 
         @Override
@@ -36,17 +51,22 @@ class MicrosoftAuthClientTest {
                     { "access_token": "MS_ACCESS_TOKEN", "token_type": "Bearer" }
                     """;
             }
-            if (url.contains("xboxlive.com")) {
-                return """
-                    { "Token": "XBL_TOKEN", "DisplayClaims": { "xui": [ { "uhs": "USER_HASH" } ] } }
-                    """;
-            }
+            // Order matters: the XSTS host CONTAINS "xboxlive.com", so it must be matched first
+            // or its branch is unreachable and every XSTS call silently gets the XBL response.
             if (url.contains("xsts.auth.xboxlive.com")) {
                 return """
-                    { "Token": "XSTS_TOKEN", "DisplayClaims": { "xui": [ { "uhs": "USER_HASH" } ] } }
+                    { "Token": "XSTS_TOKEN", "DisplayClaims": { "xui": [ { "uhs": "XSTS_USER_HASH" } ] } }
+                    """;
+            }
+            if (url.contains("user.auth.xboxlive.com")) {
+                return """
+                    { "Token": "XBL_TOKEN", "DisplayClaims": { "xui": [ { "uhs": "XBL_USER_HASH" } ] } }
                     """;
             }
             if (url.contains("login_with_xbox")) {
+                // Capture the identity token so the test can prove which token/hash pair was used.
+                minecraftLoginIdentityToken =
+                    JsonParser.parseString(jsonBody).getAsJsonObject().get("identityToken").getAsString();
                 return """
                     { "access_token": "MC_ACCESS_TOKEN" }
                     """;
@@ -57,14 +77,8 @@ class MicrosoftAuthClientTest {
 
     @Test
     void pollForMinecraftAuthChainsAllStepsAndReturnsResult() throws IOException {
-        MicrosoftAuthClient client = new MicrosoftAuthClient(new ScriptedFetcher()) {
-            @Override
-            protected String fetchMinecraftProfile(String minecraftAccessToken) {
-                return """
-                    { "id": "abc123uuid", "name": "Steve" }
-                    """;
-            }
-        };
+        ScriptedFetcher fetcher = new ScriptedFetcher();
+        MicrosoftAuthClient client = new MicrosoftAuthClient(fetcher);
 
         MicrosoftAuthClient.DeviceCodeResponse deviceCode = client.requestDeviceCode();
         assertEquals("ABCD-EFGH", deviceCode.userCode());
@@ -74,5 +88,13 @@ class MicrosoftAuthClientTest {
         assertEquals("MC_ACCESS_TOKEN", result.accessToken());
         assertEquals("abc123uuid", result.uuid());
         assertEquals("Steve", result.username());
+
+        // The identity token must be built from the XSTS token and XSTS user hash — NOT the XBL
+        // ones. Distinct canned values make a swapped-step regression fail here instead of passing
+        // silently.
+        assertEquals("XBL3.0 x=XSTS_USER_HASH;XSTS_TOKEN", fetcher.minecraftLoginIdentityToken);
+
+        // The profile must be fetched with an authenticated GET carrying the Minecraft token.
+        assertEquals("Bearer MC_ACCESS_TOKEN", fetcher.profileAuthorizationHeader);
     }
 }

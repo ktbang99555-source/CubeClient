@@ -28,6 +28,24 @@ public class JavaHttpFetcher implements HttpFetcher {
     }
 
     @Override
+    public String getString(String url, Map<String, String> headers) throws IOException {
+        try {
+            HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url)).GET();
+            headers.forEach(builder::header);
+            HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                // Deliberately omits the response body: these endpoints are authenticated and their
+                // error payloads are not guaranteed to be free of sensitive material.
+                throw new IOException("GET " + url + " returned status " + response.statusCode());
+            }
+            return response.body();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while fetching " + url, e);
+        }
+    }
+
+    @Override
     public void downloadToFile(String url, Path destination) throws IOException {
         try {
             Path parent = destination.getParent();
@@ -55,7 +73,10 @@ public class JavaHttpFetcher implements HttpFetcher {
             headers.forEach(builder::header);
             HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() / 100 != 2) {
-                throw new IOException("POST " + url + " returned status " + response.statusCode() + ": " + response.body());
+                // Status only, never the body: this method carries auth tokens to identity
+                // providers, and their error payloads are echoed straight into the user-visible
+                // error event. Keep credential material out of it.
+                throw new IOException("POST " + url + " returned status " + response.statusCode());
             }
             return response.body();
         } catch (InterruptedException e) {

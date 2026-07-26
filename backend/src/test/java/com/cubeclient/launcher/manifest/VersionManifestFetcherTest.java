@@ -26,6 +26,11 @@ class VersionManifestFetcherTest {
         }
 
         @Override
+        public String getString(String url, Map<String, String> headers) {
+            throw new UnsupportedOperationException("not used in this test");
+        }
+
+        @Override
         public void downloadToFile(String url, Path destination) throws IOException {
             throw new UnsupportedOperationException("not used in this test");
         }
