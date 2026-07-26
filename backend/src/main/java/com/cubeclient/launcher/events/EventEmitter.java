@@ -54,6 +54,15 @@ public class EventEmitter {
         write(event);
     }
 
+    /** The code the user types at Microsoft's page, plus where to type it. Not a credential. */
+    public void deviceCode(String userCode, String verificationUri) {
+        JsonObject event = new JsonObject();
+        event.addProperty("type", "device_code");
+        event.addProperty("userCode", userCode);
+        event.addProperty("verificationUri", verificationUri);
+        write(event);
+    }
+
     public void launched() {
         JsonObject event = new JsonObject();
         event.addProperty("type", "launched");

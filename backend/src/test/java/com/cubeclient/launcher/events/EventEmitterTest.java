@@ -50,4 +50,21 @@ class EventEmitterTest {
         assertTrue(line.contains("\"type\":\"profiles\""));
         assertTrue(line.contains("\"mcVersion\":\"1.21.4\""));
     }
+
+    // Main built this line by string concatenation, bypassing Gson. A quote or backslash
+    // in either field would produce a line Electron cannot parse, and the sign-in would
+    // stall with no visible cause.
+    @Test
+    void deviceCodeIsEscapedLikeEveryOtherEvent() {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        EventEmitter emitter = new EventEmitter(new PrintStream(out));
+
+        emitter.deviceCode("AB\"CD", "https://example.com/a\b");
+
+        String line = out.toString().strip();
+        assertEquals(1, line.split("\n").length);
+        assertTrue(line.contains("\"type\":\"device_code\""));
+        // Gson escapes the quote rather than ending the string early.
+        assertTrue(line.contains("AB\\\"CD"), line);
+    }
 }

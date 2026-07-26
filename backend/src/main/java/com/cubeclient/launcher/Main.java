@@ -124,9 +124,7 @@ public final class Main {
             var fetcher = new com.cubeclient.launcher.http.JavaHttpFetcher();
             var authClient = new com.cubeclient.launcher.auth.MicrosoftAuthClient(fetcher);
             var deviceCode = authClient.requestDeviceCode();
-            events.progress("auth_device_code", 0);
-            System.out.println("{\"type\":\"device_code\",\"userCode\":\"" + deviceCode.userCode()
-                + "\",\"verificationUri\":\"" + deviceCode.verificationUri() + "\"}");
+            events.deviceCode(deviceCode.userCode(), deviceCode.verificationUri());
             var result = authClient.pollForMinecraftAuth(deviceCode);
             // Distinct event type, not "login_success": Electron consumes this one to encrypt the
             // token and must never forward it to the renderer. Keeping the credential on its own
