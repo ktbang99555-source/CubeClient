@@ -4,10 +4,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ProfileStoreTest {
@@ -34,5 +36,17 @@ class ProfileStoreTest {
         List<Profile> loaded = store.loadAll();
 
         assertEquals(profiles, loaded);
+    }
+
+    @Test
+    void loadAllThrowsIOExceptionWhenJsonIsMalformed() throws IOException {
+        Path path = tempDir.resolve("profiles.json");
+        Files.writeString(path, "{ this is not json");
+        ProfileStore store = new ProfileStore(path);
+
+        IOException exception = assertThrows(IOException.class, store::loadAll);
+
+        assertTrue(exception.getMessage().contains(path.toString()),
+            "expected exception message to name the offending path: " + exception.getMessage());
     }
 }

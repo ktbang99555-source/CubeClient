@@ -2,6 +2,7 @@ package com.cubeclient.launcher.profile;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonSyntaxException;
 import com.google.gson.reflect.TypeToken;
 
 import java.io.IOException;
@@ -25,8 +26,12 @@ public class ProfileStore {
             return List.of();
         }
         String json = Files.readString(profilesJsonPath);
-        List<Profile> profiles = GSON.fromJson(json, PROFILE_LIST_TYPE);
-        return profiles == null ? List.of() : profiles;
+        try {
+            List<Profile> profiles = GSON.fromJson(json, PROFILE_LIST_TYPE);
+            return profiles == null ? List.of() : profiles;
+        } catch (JsonSyntaxException e) {
+            throw new IOException("Malformed profiles JSON at " + profilesJsonPath + ": " + e.getMessage(), e);
+        }
     }
 
     public void saveAll(List<Profile> profiles) throws IOException {
