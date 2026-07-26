@@ -29,10 +29,14 @@ public class JavaHttpFetcher implements HttpFetcher {
     @Override
     public void downloadToFile(String url, Path destination) throws IOException {
         try {
-            Files.createDirectories(destination.getParent());
+            Path parent = destination.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
             HttpRequest request = HttpRequest.newBuilder(URI.create(url)).GET().build();
             HttpResponse<Path> response = client.send(request, HttpResponse.BodyHandlers.ofFile(destination));
             if (response.statusCode() != 200) {
+                Files.deleteIfExists(destination);
                 throw new IOException("GET " + url + " returned status " + response.statusCode());
             }
         } catch (InterruptedException e) {

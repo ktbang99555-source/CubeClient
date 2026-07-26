@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class VersionManifestFetcherTest {
 
@@ -91,5 +93,82 @@ class VersionManifestFetcherTest {
         assertEquals(1, detail.libraries().size());
         assertEquals("com/example/foo/1.0/foo-1.0.jar", detail.libraries().get(0).relativePath());
         assertEquals("17", detail.assetIndex().id());
+    }
+
+    @Test
+    void fetchVersionDetailSkipsLibrariesThatCannotBeDownloadedAsArtifact() throws IOException {
+        String detailUrl = "https://example.com/1.8.9.json";
+        String detailJson = """
+            {
+              "id": "1.8.9",
+              "mainClass": "net.minecraft.client.main.Main",
+              "downloads": {
+                "client": { "url": "https://example.com/client.jar", "sha1": "abc123", "size": 100 }
+              },
+              "libraries": [
+                {
+                  "name": "com.example:foo:1.0",
+                  "downloads": {
+                    "artifact": {
+                      "path": "com/example/foo/1.0/foo-1.0.jar",
+                      "url": "https://example.com/foo-1.0.jar",
+                      "sha1": "def456",
+                      "size": 50
+                    }
+                  }
+                },
+                {
+                  "name": "net.java.jinput:jinput-platform:2.0.5",
+                  "downloads": {
+                    "classifiers": {
+                      "natives-windows": {
+                        "path": "net/java/jinput/jinput-platform/2.0.5/jinput-platform-2.0.5-natives-windows.jar",
+                        "url": "https://example.com/jinput-natives-windows.jar",
+                        "sha1": "aaa111",
+                        "size": 10
+                      }
+                    }
+                  }
+                },
+                {
+                  "name": "org.lwjgl.lwjgl:lwjgl-platform:2.9.4-nightly-20150209",
+                  "rules": [ { "action": "allow", "os": { "name": "windows" } } ]
+                }
+              ],
+              "assetIndex": { "id": "17", "url": "https://example.com/17.json", "sha1": "ghi789" }
+            }
+            """;
+        FakeHttpFetcher fetcher = new FakeHttpFetcher(Map.of(detailUrl, detailJson));
+        VersionManifestFetcher manifestFetcher = new VersionManifestFetcher(fetcher);
+
+        VersionDetail detail = manifestFetcher.fetchVersionDetail(new VersionEntry("1.8.9", detailUrl));
+
+        assertEquals(1, detail.libraries().size());
+        assertEquals("com/example/foo/1.0/foo-1.0.jar", detail.libraries().get(0).relativePath());
+    }
+
+    @Test
+    void findVersionReturnsMatchingEntry() {
+        VersionManifestFetcher manifestFetcher = new VersionManifestFetcher(new FakeHttpFetcher(Map.of()));
+        List<VersionEntry> versions = List.of(
+            new VersionEntry("1.21.4", "https://example.com/1.21.4.json"),
+            new VersionEntry("1.8.9", "https://example.com/1.8.9.json")
+        );
+
+        VersionEntry found = manifestFetcher.findVersion(versions, "1.8.9");
+
+        assertEquals(new VersionEntry("1.8.9", "https://example.com/1.8.9.json"), found);
+    }
+
+    @Test
+    void findVersionThrowsWhenVersionNotFound() {
+        VersionManifestFetcher manifestFetcher = new VersionManifestFetcher(new FakeHttpFetcher(Map.of()));
+        List<VersionEntry> versions = List.of(
+            new VersionEntry("1.21.4", "https://example.com/1.21.4.json")
+        );
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+            () -> manifestFetcher.findVersion(versions, "1.16.5"));
+        assertTrue(exception.getMessage().contains("1.16.5"));
     }
 }

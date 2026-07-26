@@ -21,52 +21,60 @@ public class VersionManifestFetcher {
 
     public List<VersionEntry> fetchVersionList() throws IOException {
         String body = fetcher.getString(MANIFEST_URL);
-        JsonObject root = JsonParser.parseString(body).getAsJsonObject();
-        JsonArray versionsArray = root.getAsJsonArray("versions");
-        List<VersionEntry> versions = new ArrayList<>();
-        for (int i = 0; i < versionsArray.size(); i++) {
-            JsonObject entry = versionsArray.get(i).getAsJsonObject();
-            versions.add(new VersionEntry(entry.get("id").getAsString(), entry.get("url").getAsString()));
+        try {
+            JsonObject root = JsonParser.parseString(body).getAsJsonObject();
+            JsonArray versionsArray = root.getAsJsonArray("versions");
+            List<VersionEntry> versions = new ArrayList<>();
+            for (int i = 0; i < versionsArray.size(); i++) {
+                JsonObject entry = versionsArray.get(i).getAsJsonObject();
+                versions.add(new VersionEntry(entry.get("id").getAsString(), entry.get("url").getAsString()));
+            }
+            return versions;
+        } catch (RuntimeException e) {
+            throw new IOException("Malformed version manifest at " + MANIFEST_URL + ": " + e.getMessage(), e);
         }
-        return versions;
     }
 
     public VersionDetail fetchVersionDetail(VersionEntry entry) throws IOException {
         String body = fetcher.getString(entry.url());
-        JsonObject root = JsonParser.parseString(body).getAsJsonObject();
+        try {
+            JsonObject root = JsonParser.parseString(body).getAsJsonObject();
 
-        String id = root.get("id").getAsString();
-        String mainClass = root.get("mainClass").getAsString();
+            String id = root.get("id").getAsString();
+            String mainClass = root.get("mainClass").getAsString();
 
-        JsonObject clientDownloadJson = root.getAsJsonObject("downloads").getAsJsonObject("client");
-        VersionDetail.ClientDownload clientDownload = new VersionDetail.ClientDownload(
-            clientDownloadJson.get("url").getAsString(),
-            clientDownloadJson.get("sha1").getAsString(),
-            clientDownloadJson.get("size").getAsLong()
-        );
+            JsonObject clientDownloadJson = root.getAsJsonObject("downloads").getAsJsonObject("client");
+            VersionDetail.ClientDownload clientDownload = new VersionDetail.ClientDownload(
+                clientDownloadJson.get("url").getAsString(),
+                clientDownloadJson.get("sha1").getAsString(),
+                clientDownloadJson.get("size").getAsLong()
+            );
 
-        List<VersionDetail.Library> libraries = new ArrayList<>();
-        for (var libraryElement : root.getAsJsonArray("libraries")) {
-            JsonObject libraryJson = libraryElement.getAsJsonObject();
-            JsonObject downloads = libraryJson.getAsJsonObject("downloads");
-            if (!downloads.has("artifact")) continue;
-            JsonObject artifact = downloads.getAsJsonObject("artifact");
-            libraries.add(new VersionDetail.Library(
-                artifact.get("path").getAsString(),
-                artifact.get("url").getAsString(),
-                artifact.get("sha1").getAsString(),
-                artifact.get("size").getAsLong()
-            ));
+            List<VersionDetail.Library> libraries = new ArrayList<>();
+            for (var libraryElement : root.getAsJsonArray("libraries")) {
+                JsonObject libraryJson = libraryElement.getAsJsonObject();
+                JsonObject downloads = libraryJson.getAsJsonObject("downloads");
+                if (downloads == null || !downloads.has("artifact")) continue;
+                JsonObject artifact = downloads.getAsJsonObject("artifact");
+                libraries.add(new VersionDetail.Library(
+                    artifact.get("path").getAsString(),
+                    artifact.get("url").getAsString(),
+                    artifact.get("sha1").getAsString(),
+                    artifact.get("size").getAsLong()
+                ));
+            }
+
+            JsonObject assetIndexJson = root.getAsJsonObject("assetIndex");
+            VersionDetail.AssetIndexRef assetIndex = new VersionDetail.AssetIndexRef(
+                assetIndexJson.get("id").getAsString(),
+                assetIndexJson.get("url").getAsString(),
+                assetIndexJson.get("sha1").getAsString()
+            );
+
+            return new VersionDetail(id, mainClass, clientDownload, libraries, assetIndex);
+        } catch (RuntimeException e) {
+            throw new IOException("Malformed version detail at " + entry.url() + ": " + e.getMessage(), e);
         }
-
-        JsonObject assetIndexJson = root.getAsJsonObject("assetIndex");
-        VersionDetail.AssetIndexRef assetIndex = new VersionDetail.AssetIndexRef(
-            assetIndexJson.get("id").getAsString(),
-            assetIndexJson.get("url").getAsString(),
-            assetIndexJson.get("sha1").getAsString()
-        );
-
-        return new VersionDetail(id, mainClass, clientDownload, libraries, assetIndex);
     }
 
     public VersionEntry findVersion(List<VersionEntry> versions, String mcVersion) {
