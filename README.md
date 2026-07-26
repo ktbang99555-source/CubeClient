@@ -3,8 +3,8 @@
 An open-source launcher for Minecraft: Java Edition. Electron front end, Java back end.
 
 It downloads the official game files from Mojang's own manifests, verifies every file by
-checksum, provisions a matching Java runtime, and starts the game with an authenticated
-Microsoft account.
+checksum, provisions a matching Java runtime, optionally installs the Fabric mod loader, and
+starts the game with an authenticated Microsoft account. Supports Minecraft 1.20.x-1.21.x.
 
 > **Status:** the launcher core works and is covered by tests, but signing in does not work yet.
 > The Azure application is awaiting Microsoft's review for Minecraft authentication, so
@@ -20,7 +20,7 @@ Microsoft account.
 - **Verified downloads.** Every file is checked against the publisher's digest before use —
   SHA-1 for Mojang files, SHA-256 for Adoptium runtimes. A mismatch forces a re-download rather
   than being accepted.
-- **Bundled runtimes.** The correct JRE (8 for 1.8.9, 17 for modern versions) is fetched from
+- **Bundled runtimes.** The JRE the version's manifest asks for (17, 21, ...) is fetched from
   [Adoptium](https://adoptium.net/) into the launcher's own directory, so the game does not
   depend on whatever `java` happens to be on `PATH`.
 - **Isolated profiles.** Each profile gets its own instance directory for saves, config, and
@@ -101,6 +101,9 @@ cd ui && npx jest              # 23 tests
 ## Not done yet
 
 - Sign-in is blocked pending Microsoft's app review (see above).
+- Only 1.20.x-1.21.x. Older versions such as 1.8.9 publish native libraries as classifier
+  artifacts that have to be unpacked and pointed at with `-Djava.library.path`; that mechanism
+  does not exist here, so they were removed from scope rather than left half-working.
 - No token refresh — the stored token expires after roughly a day.
 - Assets download sequentially; a first launch of a modern version is slow.
 - Windows only in practice: the JRE unpacker handles `.zip`, not `.tar.gz`.

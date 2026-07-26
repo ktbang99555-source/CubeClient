@@ -16,11 +16,12 @@ import java.util.Set;
 /**
  * Installs a Fabric-family mod loader for a profile.
  *
- * <p>Fabric and Legacy Fabric publish an identical profile shape at different hosts — Legacy
- * Fabric exists precisely because upstream Fabric dropped support for versions like 1.8.9 — so
- * one installer serves both and only the meta host differs.
+ * <p>Only upstream Fabric is supported, which covers the whole 1.20.x-1.21.x range this
+ * launcher targets. Legacy Fabric (1.8.9 and similar) was removed together with support for
+ * those versions: they publish native libraries as classifier artifacts that must be unpacked
+ * and pointed at with {@code -Djava.library.path}, which this launcher does not do.
  *
- * <p>Their libraries are Maven coordinates plus a repository root, not the pre-resolved,
+ * <p>Fabric libraries are Maven coordinates plus a repository root, not the pre-resolved,
  * pre-hashed download entries Mojang publishes. Each coordinate is translated into a repository
  * path, and the digest comes from the repository's own {@code .sha1} sibling so loader jars are
  * verified to the same standard as everything else.
@@ -28,7 +29,6 @@ import java.util.Set;
 public class LoaderInstaller {
 
     private static final String FABRIC_META = "https://meta.fabricmc.net/v2";
-    private static final String LEGACY_FABRIC_META = "https://meta.legacyfabric.net/v2";
 
     /**
      * The result of installing a loader.
@@ -80,7 +80,7 @@ public class LoaderInstaller {
     }
 
     /**
-     * @param loader     one of {@code vanilla}, {@code fabric}, {@code legacyfabric}
+     * @param loader     either {@code vanilla} or {@code fabric}
      * @param sharedRoot {@code %APPDATA%/CubeClient}; loader jars join the shared library tree
      */
     public InstalledLoader install(String loader, String mcVersion, Path sharedRoot)
@@ -88,7 +88,6 @@ public class LoaderInstaller {
         String metaHost = switch (loader) {
             case "vanilla" -> null;
             case "fabric" -> FABRIC_META;
-            case "legacyfabric" -> LEGACY_FABRIC_META;
             // Rejected rather than treated as vanilla: silently dropping the loader would start
             // the game with none of the profile's mods and no indication why.
             default -> throw new IOException("Unsupported mod loader: " + loader);
@@ -139,7 +138,7 @@ public class LoaderInstaller {
 
     /**
      * Resolves {@code group.id:artifact:version} to {@code group/id/artifact/version/artifact-version.jar}
-     * under the repository, which is the standard Maven layout both hosts serve.
+     * under the repository, which is the standard Maven layout Fabric's host serves.
      */
     private Path downloadLibrary(String coordinate, String repositoryUrl, Path sharedRoot)
             throws IOException {

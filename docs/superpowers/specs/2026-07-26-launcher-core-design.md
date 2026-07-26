@@ -78,3 +78,26 @@ A가 완성되어야 B/C를 실행/검증할 수 있으므로 A → (B, C) 순�
 
 - Fabric/Legacy Fabric 모드(미니맵, FPS/리소스팩 오버레이, 서버리스트·핑) 자체 구현은 Sub-project B, C에서 별도로 브레인스토밍한다.
 - 코스메틱(망토/백팩), 서버 리스트 내 자동 핑 표시 고도화, 다버전(1.20.x 세부 버전 다중 지원) 확장 등은 A 완료 이후 필요에 따라 별도 스펙으로 다룬다.
+
+
+---
+
+## 개정 (2026-07-26): 1.8.9 및 Sub-project C 범위 제외
+
+1.8.9를 실제로 실행해 보고 내린 결정이다. 구버전 마인크래프트는 네이티브 라이브러리(LWJGL의
+`.dll`)를 **classifier 아티팩트**로 배포한다. 확인된 사실:
+
+- 바닐라 1.8.9 매니페스트의 라이브러리 5개가 `downloads.classifiers`를 쓴다. 이 런처의 파서는
+  `downloads.artifact`만 읽으므로 이들을 통째로 건너뛴다.
+- Legacy Fabric의 `lwjgl-platform`은 classifier 없는 jar가 **아예 존재하지 않는다**
+  (`-natives-windows` 등만 있음).
+
+따라서 1.8.9를 띄우려면 classifier 파싱, natives jar 압축 해제, `-Djava.library.path` 전달이
+모두 필요하다. 1.20.x~1.21.x는 LWJGL 3를 쓰고 natives가 일반 classpath jar라 이 문제가 없다.
+
+**결정**: 지원 범위를 1.20.x~1.21.x로 좁히고, 1.8.9(하이픽셀)와 그것을 위한
+**Sub-project C(Legacy Fabric 모드팩)를 제외**한다. Legacy Fabric 지원 코드도 제거했다 —
+남은 범위는 업스트림 Fabric이 전부 커버하므로 죽은 코드이고, natives 문제로 깨진 것을 아는
+코드를 남기면 오해를 부른다.
+
+**남는 것**: A(런처 코어, 완료) + B(1.21.x용 자체 Fabric 모드팩).

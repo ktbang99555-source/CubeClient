@@ -17,9 +17,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Fabric and Legacy Fabric publish the same profile shape at different hosts, so one installer
- * covers both. Their libraries are Maven coordinates rather than the direct, pre-hashed download
- * entries Mojang publishes, so the coordinate has to be translated into a path and a URL.
+ * Fabric libraries are Maven coordinates rather than the direct, pre-hashed download entries
+ * Mojang publishes, so each coordinate has to be translated into a repository path and URL.
  */
 class LoaderInstallerTest {
 
@@ -177,19 +176,6 @@ class LoaderInstallerTest {
             "actual: " + downloader.expectedHashes);
     }
 
-    @Test
-    void legacyFabricUsesItsOwnMetaHost() throws IOException {
-        FakeFetcher fetcher = new FakeFetcher();
-        RecordingDownloader downloader = new RecordingDownloader(fetcher);
-
-        installer(fetcher, downloader).install("legacyfabric", "1.8.9", tempDir);
-
-        // meta.fabricmc.net has no 1.8.9 loader; asking the wrong host yields an empty list.
-        assertTrue(fetcher.requested.stream().anyMatch(u -> u.contains("meta.legacyfabric.net")),
-            "actual: " + fetcher.requested);
-        assertTrue(fetcher.requested.stream().noneMatch(u -> u.contains("meta.fabricmc.net")),
-            "actual: " + fetcher.requested);
-    }
 
     @Test
     void picksTheNewestLoaderVersionOffered() throws IOException {
@@ -233,6 +219,18 @@ class LoaderInstallerTest {
         IOException thrown = assertThrows(IOException.class,
             () -> installer(fetcher, downloader).install("forge", "1.21.4", tempDir));
         assertTrue(thrown.getMessage().contains("forge"), thrown.getMessage());
+    }
+
+    // Dropped along with 1.8.9: those versions publish natives as classifier artifacts that must
+    // be unpacked and pointed at with -Djava.library.path, which this launcher does not do.
+    @Test
+    void legacyFabricIsNoLongerSupported() {
+        FakeFetcher fetcher = new FakeFetcher();
+        RecordingDownloader downloader = new RecordingDownloader(fetcher);
+
+        IOException thrown = assertThrows(IOException.class,
+            () -> installer(fetcher, downloader).install("legacyfabric", "1.8.9", tempDir));
+        assertTrue(thrown.getMessage().contains("legacyfabric"), thrown.getMessage());
     }
 
     @Test
