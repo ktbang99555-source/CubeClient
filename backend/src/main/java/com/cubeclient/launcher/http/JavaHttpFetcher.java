@@ -10,7 +10,13 @@ import java.nio.file.Path;
 import java.util.Map;
 
 public class JavaHttpFetcher implements HttpFetcher {
-    private final HttpClient client = HttpClient.newHttpClient();
+    // Redirects must be followed: Adoptium's download links point at GitHub releases, which
+    // answer with a 302 to a CDN. HttpClient defaults to Redirect.NEVER, which turned every
+    // JRE download into a bare "returned status 302" failure. NORMAL still refuses an
+    // HTTPS -> HTTP downgrade.
+    private final HttpClient client = HttpClient.newBuilder()
+        .followRedirects(HttpClient.Redirect.NORMAL)
+        .build();
 
     @Override
     public String getString(String url) throws IOException {

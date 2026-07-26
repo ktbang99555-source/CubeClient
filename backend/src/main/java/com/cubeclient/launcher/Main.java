@@ -10,6 +10,7 @@ import com.cubeclient.launcher.launch.RealProcessRunner;
 import com.cubeclient.launcher.manifest.VersionManifestFetcher;
 import com.cubeclient.launcher.profile.Profile;
 import com.cubeclient.launcher.profile.ProfileStore;
+import com.cubeclient.launcher.runtime.JreProvisioner;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -106,9 +107,13 @@ public final class Main {
                 manifestFetcher, downloader, assetDownloader, argsBuilder, processRunner, events);
 
             Path gameDir = appData.resolve("instances").resolve(profile.id());
-            String javaMajorVersion = profile.mcVersion().equals("1.8.9") ? "8" : "17";
-            Path javaBin = appData.resolve("runtimes").resolve(javaMajorVersion).resolve("bin")
-                .resolve(System.getProperty("os.name").toLowerCase().contains("win") ? "java.exe" : "java");
+
+            // 1.8.9 will not run on a modern JRE and modern versions will not run on 8, so the
+            // runtime is chosen per profile and provisioned rather than taken from PATH.
+            int javaMajorVersion = profile.mcVersion().equals("1.8.9") ? 8 : 17;
+            events.progress("runtime", 0);
+            Path javaBin = new JreProvisioner(fetcher, downloader)
+                .ensureJre(javaMajorVersion, appData.resolve("runtimes"), adoptiumOsName());
 
             return launchCommand.run(profile, gameDir, appData, javaBin);
         } catch (IOException e) {
@@ -133,6 +138,14 @@ public final class Main {
             events.error("login", e.getMessage());
             return 1;
         }
+    }
+
+    /** Adoptium's os names differ from {@code os.name}; map the three we can build for. */
+    private static String adoptiumOsName() {
+        String os = System.getProperty("os.name").toLowerCase();
+        if (os.contains("win")) return "windows";
+        if (os.contains("mac")) return "mac";
+        return "linux";
     }
 
     static Path appDataDir() {
