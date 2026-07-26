@@ -75,6 +75,90 @@ Each component exports pure render functions. Tasks 2–5 build them independent
 
 ---
 
+## Task 0: Emit the device code through the event emitter
+
+Do this first — Task 7's store parses this event, and it is currently the one backend
+event built by string concatenation instead of Gson.
+
+**Files:**
+- Modify: `backend/src/main/java/com/cubeclient/launcher/events/EventEmitter.java`
+- Modify: `backend/src/main/java/com/cubeclient/launcher/Main.java`
+- Test: `backend/src/test/java/com/cubeclient/launcher/events/EventEmitterTest.java`
+
+**Interfaces:**
+- Produces: `EventEmitter.deviceCode(String userCode, String verificationUri)` — writes one
+  `{"type":"device_code","userCode":...,"verificationUri":...}` line, Gson-escaped and flushed.
+
+- [ ] **Step 1: Write the failing test**
+
+Append to `backend/src/test/java/com/cubeclient/launcher/events/EventEmitterTest.java`:
+
+```java
+    // Main built this line by string concatenation, bypassing Gson. A quote or backslash
+    // in either field would produce a line Electron cannot parse, and the sign-in would
+    // stall with no visible cause.
+    @Test
+    void deviceCodeIsEscapedLikeEveryOtherEvent() {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        EventEmitter emitter = new EventEmitter(new PrintStream(out));
+
+        emitter.deviceCode("AB\"CD", "https://example.com/a\b");
+
+        String line = out.toString().strip();
+        assertEquals(1, line.split("
+").length);
+        assertTrue(line.contains("\"type\":\"device_code\""));
+        // Gson escapes the quote rather than ending the string early.
+        assertTrue(line.contains("AB\\\"CD"), line);
+    }
+```
+
+- [ ] **Step 2: Run the test and watch it fail**
+
+Run: `cd backend && ./gradlew test --tests "*.EventEmitterTest"`
+Expected: FAIL — `cannot find symbol: method deviceCode`.
+
+- [ ] **Step 3: Add the method**
+
+In `EventEmitter.java`, beside the other event methods:
+
+```java
+    /** The code the user types at Microsoft's page, plus where to type it. Not a credential. */
+    public void deviceCode(String userCode, String verificationUri) {
+        JsonObject event = new JsonObject();
+        event.addProperty("type", "device_code");
+        event.addProperty("userCode", userCode);
+        event.addProperty("verificationUri", verificationUri);
+        write(event);
+    }
+```
+
+- [ ] **Step 4: Use it in Main**
+
+In `Main.runLogin`, replace the hand-built line:
+
+```java
+            events.deviceCode(deviceCode.userCode(), deviceCode.verificationUri());
+```
+
+Delete the `System.out.println("{\"type\":\"device_code\"...")` statement it replaces, and the
+now-redundant `events.progress("auth_device_code", 0)` line above it — the modal's waiting phase
+is driven by the renderer, not by a progress event.
+
+- [ ] **Step 5: Run the whole backend suite**
+
+Run: `cd backend && ./gradlew test`
+Expected: BUILD SUCCESSFUL, zero warnings, every previously passing test still passing.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/src/main/java/com/cubeclient/launcher/events/EventEmitter.java backend/src/main/java/com/cubeclient/launcher/Main.java backend/src/test/java/com/cubeclient/launcher/events/EventEmitterTest.java
+git commit -m "Emit the device code through the event emitter so it is escaped"
+```
+
+---
+
 ## Task 1: Stylesheet and shell skeleton
 
 **Files:**
@@ -1840,5 +1924,7 @@ Checked against `docs/superpowers/specs/2026-07-26-launcher-ui-design.md`:
 - Token isolation — asserted in Tasks 5 and 7, and manually in Task 8 Step 5.6.
 - Component split with no Electron imports — Tasks 2–5.
 - Out-of-scope items (version editor, settings contents, multiple accounts, token refresh) are not built; the add row is disabled and the settings rail button is inert.
+
+Fixed during review: `device_code` was the one backend event built by string concatenation rather than Gson — Task 0 routes it through `EventEmitter`.
 
 Known gap carried forward: `javaVersion` is never set by any event, so the runtime chip always reads `—`. The backend does not currently emit the Java version it provisioned. Left as-is rather than inventing an event; the chip degrades to a dash, which Task 4's test pins.
