@@ -1291,7 +1291,13 @@ git commit -m "Add JSON-lines event emitter and list-profiles command"
 
 **Interfaces:**
 - Consumes: `Profile` (Task 4), `VersionDetail` (Task 2).
-- Produces: `JvmArgsBuilder.build(Profile profile, VersionDetail detail, Path gameDir, Path javaBin)` → `List<String>` — a full command line: `[javaBin, "-cp", classpath, mainClass, "--username", ..., "--version", ..., "--gameDir", ...]`. Classpath entries are `gameDir/libraries/<relativePath>` for each library plus `gameDir/versions/<id>/<id>.jar` for the client jar, joined with the platform path separator.
+- Produces: `JvmArgsBuilder.build(Profile profile, VersionDetail detail, Path gameDir, Path sharedRoot, Path javaBin)` → `List<String>` — a full command line: `[javaBin, "-cp", classpath, mainClass, "--username", ..., "--version", ..., "--gameDir", ...]`. Classpath entries are `sharedRoot/libraries/<relativePath>` for each library plus `sharedRoot/versions/<id>/<id>.jar` for the client jar, joined with `File.pathSeparator`.
+
+**Directory layout this encodes** (matches the design spec):
+- `gameDir` = `%APPDATA%/CubeClient/instances/<profileId>` — per-profile, isolated (saves, config, mods)
+- `sharedRoot` = `%APPDATA%/CubeClient` — holds `libraries/`, `versions/`, `assets/`, shared by every profile
+
+`sharedRoot` is passed in explicitly rather than derived from `gameDir`. Deriving it by path arithmetic (`gameDir.resolveSibling(...)`) silently lands one level too deep — `instances/libraries` instead of `libraries` — and the mistake is invisible because the downloader would make the same wrong turn, so the game still launches with everything filed in the wrong place.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1322,21 +1328,33 @@ class JvmArgsBuilderTest {
             new VersionDetail.AssetIndexRef("17", "https://example.com/17.json", "ghi")
         );
         Profile profile = new Profile("latest-1.21", "1.21.4", "vanilla", List.of());
-        Path gameDir = Path.of("C:", "AppData", "CubeClient", "instances", "latest-1.21");
-        Path javaBin = Path.of("C:", "AppData", "CubeClient", "runtimes", "17", "bin", "java.exe");
+        Path sharedRoot = Path.of("C:", "AppData", "CubeClient");
+        Path gameDir = sharedRoot.resolve(Path.of("instances", "latest-1.21"));
+        Path javaBin = sharedRoot.resolve(Path.of("runtimes", "17", "bin", "java.exe"));
 
-        List<String> command = new JvmArgsBuilder().build(profile, detail, gameDir, javaBin);
+        List<String> command = new JvmArgsBuilder().build(profile, detail, gameDir, sharedRoot, javaBin);
 
         assertEquals(javaBin.toString(), command.get(0));
         assertEquals("-cp", command.get(1));
         String classpath = command.get(2);
-        assertTrue(classpath.contains("foo-1.0.jar"));
-        assertTrue(classpath.contains("1.21.4.jar"));
-        assertTrue(classpath.split(File.pathSeparator.equals(";") ? ";" : ":").length == 2);
+        List<String> classpathEntries = List.of(classpath.split(java.util.regex.Pattern.quote(File.pathSeparator)));
+        assertEquals(2, classpathEntries.size());
+        // Shared trees must sit directly under sharedRoot, NOT nested inside instances/.
+        assertEquals(
+            sharedRoot.resolve(Path.of("libraries", "com", "example", "foo", "1.0", "foo-1.0.jar")).toString(),
+            classpathEntries.get(0));
+        assertEquals(
+            sharedRoot.resolve(Path.of("versions", "1.21.4", "1.21.4.jar")).toString(),
+            classpathEntries.get(1));
         assertEquals("net.minecraft.client.main.Main", command.get(3));
         assertTrue(command.contains("--version"));
         assertTrue(command.contains("1.21.4"));
-        assertTrue(command.contains("--gameDir"));
+
+        // --gameDir is the isolated per-profile dir; --assetsDir is the shared tree.
+        assertEquals(gameDir.toString(), command.get(command.indexOf("--gameDir") + 1));
+        assertEquals(
+            sharedRoot.resolve("assets").toString(),
+            command.get(command.indexOf("--assetsDir") + 1));
     }
 }
 ```
@@ -1363,11 +1381,18 @@ import java.util.stream.Collectors;
 
 public class JvmArgsBuilder {
 
-    public List<String> build(Profile profile, VersionDetail detail, Path gameDir, Path javaBin) {
+    /**
+     * @param gameDir    the profile's own instance directory, {@code %APPDATA%/CubeClient/instances/<profileId>}
+     * @param sharedRoot {@code %APPDATA%/CubeClient} — the parent holding the shared
+     *                   {@code libraries/}, {@code versions/}, and {@code assets/} trees that every
+     *                   profile draws from. Passed explicitly rather than derived from {@code gameDir}
+     *                   by path arithmetic, so the layout is stated once and cannot drift.
+     */
+    public List<String> build(Profile profile, VersionDetail detail, Path gameDir, Path sharedRoot, Path javaBin) {
         List<String> command = new ArrayList<>();
         command.add(javaBin.toString());
         command.add("-cp");
-        command.add(buildClasspath(detail, gameDir));
+        command.add(buildClasspath(detail, sharedRoot));
         command.add(detail.mainClass());
         command.add("--username");
         command.add(profile.id());
@@ -1376,15 +1401,15 @@ public class JvmArgsBuilder {
         command.add("--gameDir");
         command.add(gameDir.toString());
         command.add("--assetsDir");
-        command.add(gameDir.resolveSibling("assets").toString());
+        command.add(sharedRoot.resolve("assets").toString());
         return command;
     }
 
-    private String buildClasspath(VersionDetail detail, Path gameDir) {
+    private String buildClasspath(VersionDetail detail, Path sharedRoot) {
         List<String> entries = detail.libraries().stream()
-            .map(library -> gameDir.resolveSibling(Path.of("libraries", library.relativePath())).toString())
+            .map(library -> sharedRoot.resolve("libraries").resolve(library.relativePath()).toString())
             .collect(Collectors.toCollection(ArrayList::new));
-        entries.add(gameDir.resolveSibling(Path.of("versions", detail.id(), detail.id() + ".jar")).toString());
+        entries.add(sharedRoot.resolve(Path.of("versions", detail.id(), detail.id() + ".jar")).toString());
         return String.join(File.pathSeparator, entries);
     }
 }
@@ -1416,7 +1441,7 @@ git commit -m "Add JVM args builder"
 **Interfaces:**
 - Consumes: `VersionManifestFetcher` (Task 2), `Downloader` (Task 3), `Profile`/`ProfileStore` (Task 4), `EventEmitter` (Task 5), `JvmArgsBuilder` (Task 6).
 - Produces: `ProcessRunner` interface with `Process start(List<String> command, Path workingDir) throws IOException`.
-- Produces: `LaunchCommand(VersionManifestFetcher manifestFetcher, Downloader downloader, JvmArgsBuilder argsBuilder, ProcessRunner processRunner, EventEmitter events)`, `run(Profile profile, Path gameDir, Path javaBin)` → `int` (exit code). Emits `progress` events for `"manifest"`, `"libraries"`, `"client_jar"`, `"launching"`, then `launched()`, then `exited(code)`.
+- Produces: `LaunchCommand(VersionManifestFetcher manifestFetcher, Downloader downloader, JvmArgsBuilder argsBuilder, ProcessRunner processRunner, EventEmitter events)`, `run(Profile profile, Path gameDir, Path sharedRoot, Path javaBin)` → `int` (exit code). Emits `progress` events for `"manifest"`, `"libraries"`, `"client_jar"`, `"launching"`, then `launched()`, then `exited(code)`.
 - Produces: `Main.run` now handles `"launch"` (reads profile id from `args[1]`, looks it up via `ProfileStore`, wires real collaborators, calls `LaunchCommand.run`).
 
 - [ ] **Step 1: Write the failing test**
@@ -1521,10 +1546,11 @@ class LaunchCommandTest {
             manifestFetcher, downloader, new JvmArgsBuilder(), processRunner, events);
 
         Profile profile = new Profile("latest-1.21", "1.21.4", "vanilla", List.of());
-        Path gameDir = tempDir.resolve("instances").resolve("latest-1.21");
-        Path javaBin = tempDir.resolve("runtimes/17/bin/java");
+        Path sharedRoot = tempDir;
+        Path gameDir = sharedRoot.resolve("instances").resolve("latest-1.21");
+        Path javaBin = sharedRoot.resolve("runtimes/17/bin/java");
 
-        int exitCode = launchCommand.run(profile, gameDir, javaBin);
+        int exitCode = launchCommand.run(profile, gameDir, sharedRoot, javaBin);
 
         assertEquals(0, exitCode);
         assertTrue(processRunner.lastCommand.contains("net.minecraft.client.main.Main"));
@@ -1615,14 +1641,22 @@ public class LaunchCommand {
         this.events = events;
     }
 
-    public int run(Profile profile, Path gameDir, Path javaBin) throws IOException {
+    /**
+     * @param gameDir    the profile's instance dir, {@code %APPDATA%/CubeClient/instances/<profileId>}
+     * @param sharedRoot {@code %APPDATA%/CubeClient}, holding the shared {@code libraries/},
+     *                   {@code versions/}, and {@code assets/} trees
+     *
+     * <p>Downloads MUST land under the same {@code sharedRoot} that {@link JvmArgsBuilder} puts on
+     * the classpath. Both take it as an explicit parameter so they cannot disagree.
+     */
+    public int run(Profile profile, Path gameDir, Path sharedRoot, Path javaBin) throws IOException {
         events.progress("manifest", 0);
         var versions = manifestFetcher.fetchVersionList();
         VersionEntry entry = manifestFetcher.findVersion(versions, profile.mcVersion());
         VersionDetail detail = manifestFetcher.fetchVersionDetail(entry);
 
         events.progress("libraries", 30);
-        Path librariesDir = gameDir.resolveSibling("libraries");
+        Path librariesDir = sharedRoot.resolve("libraries");
         for (VersionDetail.Library library : detail.libraries()) {
             downloader.downloadVerified(
                 library.url(),
@@ -1632,11 +1666,11 @@ public class LaunchCommand {
         }
 
         events.progress("client_jar", 60);
-        Path clientJar = gameDir.resolveSibling(Path.of("versions", detail.id(), detail.id() + ".jar"));
+        Path clientJar = sharedRoot.resolve(Path.of("versions", detail.id(), detail.id() + ".jar"));
         downloader.downloadVerified(detail.clientDownload().url(), clientJar, detail.clientDownload().sha1());
 
         events.progress("launching", 90);
-        var command = argsBuilder.build(profile, detail, gameDir, javaBin);
+        var command = argsBuilder.build(profile, detail, gameDir, sharedRoot, javaBin);
         Process process = processRunner.start(command, gameDir);
         events.launched();
 
@@ -1699,7 +1733,7 @@ with the new method:
             Path javaBin = appData.resolve("runtimes").resolve(javaMajorVersion).resolve("bin")
                 .resolve(System.getProperty("os.name").toLowerCase().contains("win") ? "java.exe" : "java");
 
-            return launchCommand.run(profile, gameDir, javaBin);
+            return launchCommand.run(profile, gameDir, appData, javaBin);
         } catch (IOException e) {
             events.error("launch", e.getMessage());
             return 1;
