@@ -21,4 +21,21 @@ class MainSmokeTest {
         assertEquals(0, exitCode);
         assertTrue(captured.toString().contains("\"type\":\"pong\""));
     }
+
+    @Test
+    void unknownSubcommandEmitsErrorEventRatherThanCrashing() {
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        PrintStream original = System.out;
+        int exitCode;
+        try {
+            System.setOut(new PrintStream(captured));
+            exitCode = Main.run(new String[] { "no-such-command" });
+        } finally {
+            System.setOut(original);
+        }
+        assertEquals(1, exitCode);
+        String output = captured.toString();
+        assertTrue(output.contains("\"type\":\"error\""));
+        assertTrue(output.contains("no-such-command"));
+    }
 }
