@@ -1191,6 +1191,20 @@ public final class Main {
 
         EventEmitter events = new EventEmitter(System.out);
 
+        // Safety net: the design spec requires that every backend failure reach the UI as a
+        // JSON error event. Subcommand handlers catch IOException themselves, but unchecked
+        // exceptions (e.g. VersionManifestFetcher.findVersion throws IllegalArgumentException
+        // for an unknown Minecraft version) would otherwise escape and kill the process with a
+        // stack trace on stderr, which Electron cannot parse. Convert anything that escapes.
+        try {
+            return dispatch(args, events);
+        } catch (RuntimeException e) {
+            events.error("cli", e.getClass().getSimpleName() + ": " + e.getMessage());
+            return 1;
+        }
+    }
+
+    private static int dispatch(String[] args, EventEmitter events) {
         switch (args[0]) {
             case "ping" -> {
                 System.out.println("{\"type\":\"pong\"}");
@@ -1227,15 +1241,43 @@ public final class Main {
 }
 ```
 
-- [ ] **Step 6: Run full backend test suite**
+- [ ] **Step 6: Test the unchecked-exception safety net**
+
+The `catch (RuntimeException)` in `run` is the only thing standing between an unchecked exception and a crashed backend that Electron cannot interpret. Test it directly by adding this to `backend/src/test/java/com/cubeclient/launcher/MainSmokeTest.java`:
+
+```java
+    @Test
+    void unknownSubcommandEmitsErrorEventRatherThanCrashing() {
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        PrintStream original = System.out;
+        int exitCode;
+        try {
+            System.setOut(new PrintStream(captured));
+            exitCode = Main.run(new String[] { "no-such-command" });
+        } finally {
+            System.setOut(original);
+        }
+        assertEquals(1, exitCode);
+        String output = captured.toString();
+        assertTrue(output.contains("\"type\":\"error\""));
+        assertTrue(output.contains("no-such-command"));
+    }
+```
+
+This asserts the error path emits a parseable JSON line instead of throwing. (The `RuntimeException` branch itself is exercised end-to-end in Task 7, where `findVersion` throws `IllegalArgumentException` for an unknown Minecraft version.)
+
+Run: `cd backend && ./gradlew test --tests "*.MainSmokeTest"`
+Expected: PASS, 2 tests.
+
+- [ ] **Step 7: Run full backend test suite**
 
 Run: `cd backend && ./gradlew test`
-Expected: `BUILD SUCCESSFUL`, all tests so far pass.
+Expected: `BUILD SUCCESSFUL`, all tests so far pass, output pristine (zero warnings).
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add backend/src/main/java/com/cubeclient/launcher/events backend/src/main/java/com/cubeclient/launcher/Main.java backend/src/test/java/com/cubeclient/launcher/events
+git add backend/src/main/java/com/cubeclient/launcher/events backend/src/main/java/com/cubeclient/launcher/Main.java backend/src/test/java/com/cubeclient/launcher/events backend/src/test/java/com/cubeclient/launcher/MainSmokeTest.java
 git commit -m "Add JSON-lines event emitter and list-profiles command"
 ```
 
