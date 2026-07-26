@@ -96,8 +96,14 @@ mkdir -p "backend/src/test/java/com/cubeclient/launcher"
 
 `backend/settings.gradle.kts`:
 ```kotlin
+plugins {
+    id("org.gradle.toolchains.foojay-resolver-convention") version "0.8.0"
+}
+
 rootProject.name = "cubeclient-launcher-backend"
 ```
+
+Note: this machine only has Java 8 installed, and the backend targets Java 17 (see `build.gradle.kts` below). The `foojay-resolver-convention` plugin lets Gradle auto-download a matching JDK 17 toolchain the first time `./gradlew` runs, instead of failing with "no compatible toolchain found". This requires internet access on first build; the downloaded JDK is cached under `~/.gradle/jdks/` for all subsequent builds.
 
 `backend/build.gradle.kts`:
 ```kotlin
@@ -119,6 +125,10 @@ repositories {
 dependencies {
     implementation("com.google.code.gson:gson:2.11.0")
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+    // Required explicitly: Gradle 8.x deprecates auto-loading the test framework's
+    // runtime, and omitting this makes every build print a "Deprecated Gradle
+    // features were used in this build" warning.
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 application {
