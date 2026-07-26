@@ -1492,7 +1492,19 @@ class LaunchCommandTest {
                   "id": "1.21.4",
                   "mainClass": "net.minecraft.client.main.Main",
                   "downloads": { "client": { "url": "https://example.com/client.jar", "sha1": "IGNORED", "size": 1 } },
-                  "libraries": [],
+                  "libraries": [
+                    {
+                      "name": "com.example:foo:1.0",
+                      "downloads": {
+                        "artifact": {
+                          "path": "com/example/foo/1.0/foo-1.0.jar",
+                          "url": "https://example.com/foo-1.0.jar",
+                          "sha1": "IGNORED",
+                          "size": 2
+                        }
+                      }
+                    }
+                  ],
                   "assetIndex": { "id": "17", "url": "https://example.com/17.json", "sha1": "IGNORED" }
                 }
                 """;
@@ -1505,11 +1517,20 @@ class LaunchCommandTest {
         }
     }
 
+    /**
+     * Records every destination it is asked to write to. The recorded paths are the only thing
+     * that can catch a regression where downloads are resolved against {@code gameDir} instead of
+     * {@code sharedRoot} — such a bug leaves the exit code, the assembled command, and every
+     * emitted event completely unchanged, so nothing else in this test would notice it.
+     */
     static class NoVerifyDownloader extends Downloader {
+        final List<Path> destinations = new ArrayList<>();
+
         NoVerifyDownloader(HttpFetcher fetcher) { super(fetcher); }
 
         @Override
         public void downloadVerified(String url, Path destination, String expectedSha1) throws IOException {
+            destinations.add(destination);
             if (!Files.exists(destination)) {
                 Files.createDirectories(destination.getParent());
                 Files.writeString(destination, "fake-jar-bytes");
@@ -1554,8 +1575,26 @@ class LaunchCommandTest {
 
         assertEquals(0, exitCode);
         assertTrue(processRunner.lastCommand.contains("net.minecraft.client.main.Main"));
+
+        // Downloads must land under sharedRoot, NOT under gameDir. Assert the exact paths:
+        // this is the only assertion that fails if the sharedRoot/gameDir wiring regresses.
+        assertEquals(
+            List.of(
+                sharedRoot.resolve(Path.of("libraries", "com", "example", "foo", "1.0", "foo-1.0.jar")),
+                sharedRoot.resolve(Path.of("versions", "1.21.4", "1.21.4.jar"))
+            ),
+            downloader.destinations);
+
+        // The classpath the game is launched with must point at those same downloaded files.
+        String classpath = processRunner.lastCommand.get(processRunner.lastCommand.indexOf("-cp") + 1);
+        for (Path destination : downloader.destinations) {
+            assertTrue(classpath.contains(destination.toString()),
+                "classpath is missing downloaded file " + destination);
+        }
+
         String eventLog = out.toString();
         assertTrue(eventLog.contains("\"stage\":\"manifest\""));
+        assertTrue(eventLog.contains("\"stage\":\"libraries\""));
         assertTrue(eventLog.contains("\"stage\":\"client_jar\""));
         assertTrue(eventLog.contains("\"type\":\"launched\""));
         assertTrue(eventLog.contains("\"type\":\"exited\""));
@@ -1593,12 +1632,27 @@ import java.nio.file.Path;
 import java.util.List;
 
 public class RealProcessRunner implements ProcessRunner {
+
+    /**
+     * Starts the game with its merged stdout/stderr redirected straight to a log file.
+     *
+     * <p>The redirect is not a convenience — it is required for correctness. A subprocess whose
+     * output nobody consumes blocks forever once the OS pipe buffer fills (a few dozen KB), and
+     * Minecraft plus the Fabric loader emit far more than that during startup alone. Left as an
+     * unread pipe, the game freezes and {@code Process#waitFor} never returns. Redirecting to a
+     * file hands the draining to the OS, so there is no pipe to fill and no reader thread to
+     * manage. It also satisfies the design spec's requirement to persist crash logs for the UI's
+     * "show log" affordance.
+     */
     @Override
     public Process start(List<String> command, Path workingDir) throws IOException {
         Files.createDirectories(workingDir);
+        Path logFile = workingDir.resolve("logs").resolve("latest.log");
+        Files.createDirectories(logFile.getParent());
         return new ProcessBuilder(command)
             .directory(workingDir.toFile())
             .redirectErrorStream(true)
+            .redirectOutput(ProcessBuilder.Redirect.to(logFile.toFile()))
             .start();
     }
 }
@@ -2441,7 +2495,7 @@ git commit -m "Wire Electron UI to backend process for end-to-end profile launch
 These were identified during design but are explicitly out of scope for the launcher-core plan, to keep it focused and shippable on its own:
 
 - **Automated JRE provisioning** (downloading Java 8/17 from Adoptium into `runtimes/`) — Task 11's manual test uses a hand-placed JRE. Add a follow-up task/plan for this before distributing the app to other users.
-- **Persisted crash logs and a "Show Log" button** — `RealProcessRunner` merges the game's stdout/stderr (`redirectErrorStream(true)`), but this plan never reads or writes that stream to a log file, and the renderer has no log viewer. Add a follow-up task that pipes `process.getInputStream()` to a file under `instances/<profileId>/logs/` and exposes it in the UI before relying on this for crash diagnostics.
+- **A "Show Log" button in the UI** — `RealProcessRunner` now redirects the game's merged stdout/stderr to `instances/<profileId>/logs/latest.log`. That redirect is mandatory (an unread pipe deadlocks the game once the OS buffer fills) and it also satisfies the design spec's log-persistence requirement. What is still missing is the UI affordance: the renderer has no way to open or display that file. Add a follow-up task for the viewer before relying on this for crash diagnostics. Log rotation is also absent — `latest.log` is overwritten on each launch.
 - **Wiring `login` into the UI and gating `launch` on being logged in** — Task 8 adds the `login` backend command and Task 11 wires `list-profiles`/`launch`, but connecting the login screen to the Play flow (so `--username`/`--uuid`/`--accessToken` are passed into `JvmArgsBuilder`) is a small follow-up once a real Azure app ID is registered.
 - **Sub-projects B and C** (the actual Fabric/Legacy Fabric mod jars for minimap, FPS/resource pack overlay, server list+ping) — separate specs and plans per the design doc.
 - **Packaging/installer** (electron-builder config, code signing) — needed before end users install this, not needed to verify the design works.
