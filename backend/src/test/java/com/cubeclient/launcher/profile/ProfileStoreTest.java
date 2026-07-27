@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -21,6 +22,56 @@ class ProfileStoreTest {
     void loadAllReturnsEmptyListWhenFileMissing() throws IOException {
         ProfileStore store = new ProfileStore(tempDir.resolve("profiles.json"));
         assertTrue(store.loadAll().isEmpty());
+    }
+
+    /**
+     * A first run has no profiles.json, and an empty launcher window cannot explain that
+     * there is nothing to launch — it just looks broken, which is how it was reported.
+     */
+    @Test
+    void seedsDefaultVersionsWhenThereIsNoFileYet() throws IOException {
+        Path path = tempDir.resolve("profiles.json");
+        ProfileStore store = new ProfileStore(path);
+
+        List<Profile> seeded = store.loadOrSeedDefaults();
+
+        assertFalse(seeded.isEmpty(), "a fresh install must have something to launch");
+        assertTrue(Files.exists(path), "the seeded list must survive a restart");
+        assertEquals(seeded, store.loadAll());
+    }
+
+    @Test
+    void seededVersionsAreLaunchable() throws IOException {
+        List<Profile> seeded =
+            new ProfileStore(tempDir.resolve("profiles.json")).loadOrSeedDefaults();
+
+        for (Profile profile : seeded) {
+            assertFalse(profile.id().isBlank(), "every version needs an id to launch by");
+            assertFalse(profile.mcVersion().isBlank());
+            // LoaderInstaller only knows these two; anything else fails at launch time.
+            assertTrue(profile.loader().equals("vanilla") || profile.loader().equals("fabric"),
+                "unsupported loader seeded: " + profile.loader());
+        }
+    }
+
+    @Test
+    void doesNotOverwriteAVersionListTheUserAlreadyHas() throws IOException {
+        Path path = tempDir.resolve("profiles.json");
+        ProfileStore store = new ProfileStore(path);
+        List<Profile> mine = List.of(new Profile("mine", "1.20.1", "fabric", List.of()));
+        store.saveAll(mine);
+
+        assertEquals(mine, store.loadOrSeedDefaults());
+    }
+
+    // Emptying the file is a deliberate act; refilling it would fight the user.
+    @Test
+    void leavesADeliberatelyEmptyListAlone() throws IOException {
+        Path path = tempDir.resolve("profiles.json");
+        ProfileStore store = new ProfileStore(path);
+        store.saveAll(List.of());
+
+        assertTrue(store.loadOrSeedDefaults().isEmpty());
     }
 
     @Test

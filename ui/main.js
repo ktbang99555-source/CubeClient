@@ -127,6 +127,14 @@ function createWindow() {
     const profilesPath = path.join(appDataDir(), 'profiles.json');
     trace('[main] profiles file =', profilesPath,
       fs.existsSync(profilesPath) ? `(${fs.statSync(profilesPath).size} bytes)` : '(MISSING)');
+    // What this process can actually see in that directory. A file that exists for one
+    // process and not another is either a permission wall or a different directory, and
+    // the listing tells those apart.
+    try {
+      trace('[main] appdata contents =', JSON.stringify(fs.readdirSync(appDataDir())));
+    } catch (err) {
+      trace('[main] appdata unreadable =', err.code);
+    }
     startBackend(JAR_PATH, 'list-profiles', [], send, undefined, javaCommand);
   });
 

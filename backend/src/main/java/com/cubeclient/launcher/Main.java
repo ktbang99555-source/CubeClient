@@ -71,7 +71,10 @@ public final class Main {
         try {
             Path profilesPath = appDataDir().resolve("profiles.json");
             ProfileStore store = new ProfileStore(profilesPath);
-            List<Profile> profiles = store.loadAll();
+            // Seeds a default set when the file is absent. An empty launcher window has no
+            // way to explain that there is nothing to launch, and requiring a hand-written
+            // JSON file before the program does anything is not a reasonable first run.
+            List<Profile> profiles = store.loadOrSeedDefaults();
             events.profiles(profiles);
             return 0;
         } catch (IOException e) {

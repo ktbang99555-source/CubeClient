@@ -34,6 +34,29 @@ public class ProfileStore {
         }
     }
 
+    /**
+     * The versions to launch with, seeding a default set the first time.
+     *
+     * {@link #loadAll()} answers an absent file with an empty list, which the launcher
+     * cannot tell apart from "you have no versions configured" — and an empty launcher
+     * window explains neither. Requiring the user to hand-write a JSON file before the
+     * program does anything is not a reasonable first run, so write a default set instead
+     * and return it.
+     *
+     * <p>Only an absent file is seeded. A file the user emptied on purpose is left alone.
+     */
+    public List<Profile> loadOrSeedDefaults() throws IOException {
+        if (Files.exists(profilesJsonPath)) {
+            return loadAll();
+        }
+        List<Profile> defaults = List.of(
+            new Profile("fabric-1.21.4", "1.21.4", "fabric", List.of()),
+            new Profile("vanilla-1.21.4", "1.21.4", "vanilla", List.of())
+        );
+        saveAll(defaults);
+        return defaults;
+    }
+
     public void saveAll(List<Profile> profiles) throws IOException {
         if (profilesJsonPath.getParent() != null) {
             Files.createDirectories(profilesJsonPath.getParent());
