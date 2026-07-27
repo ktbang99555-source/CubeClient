@@ -1,8 +1,9 @@
-const { app, BrowserWindow, ipcMain, safeStorage, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, safeStorage, shell, clipboard } = require('electron');
 const path = require('path');
 const { startBackend } = require('./src/backendProcess');
 const { AuthStore } = require('./src/authStore');
 const { sanitizeForRenderer } = require('./src/rendererEvents');
+const { isAllowedExternalUrl } = require('./src/externalUrl');
 
 const JAR_PATH = path.join(
   __dirname,
@@ -22,6 +23,12 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1000,
     height: 650,
+    minWidth: 860,
+    minHeight: 560,
+    // The title bar is drawn in the renderer so it can carry the account chip and match
+    // the rest of the shell.
+    frame: false,
+    backgroundColor: '#0f1216',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       // The renderer handles profile data from a user-editable file; keep it out of Node.
@@ -76,8 +83,22 @@ function createWindow() {
     startBackend(JAR_PATH, 'launch', [profileId], send, undefined, javaCommand, session);
   });
 
+  // Tracked so the modal's 취소 button (and Escape) can actually stop the sign-in rather
+  // than leaving a backend polling Microsoft for fifteen minutes with nobody watching.
+  let loginProcess = null;
+
   ipcMain.on('start-login', () => {
-    startBackend(JAR_PATH, 'login', [], send, undefined, javaCommand);
+    if (loginProcess) return;
+    loginProcess = startBackend(JAR_PATH, 'login', [], (event) => {
+      if (event.type === 'backend_exit') loginProcess = null;
+      send(event);
+    }, undefined, javaCommand);
+  });
+
+  ipcMain.on('cancel-login', () => {
+    if (!loginProcess) return;
+    loginProcess.kill();
+    loginProcess = null;
   });
 
   ipcMain.on('open-log', (_event, profileId) => {
@@ -88,6 +109,25 @@ function createWindow() {
     const logPath = path.join(instancesDir, profileId, 'logs', 'latest.log');
     if (!path.resolve(logPath).startsWith(path.resolve(instancesDir) + path.sep)) return;
     shell.openPath(logPath);
+  });
+
+  ipcMain.on('window-minimize', () => win.minimize());
+  ipcMain.on('window-maximize', () => {
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+  });
+  ipcMain.on('window-close', () => win.close());
+
+  ipcMain.on('copy-to-clipboard', (_event, text) => {
+    if (typeof text === 'string') clipboard.writeText(text);
+  });
+
+  ipcMain.on('open-external', (_event, url) => {
+    // Only Microsoft's device-login page is ever opened from here. Without this check the
+    // renderer could hand the OS any URL — including a file: URL, which on Windows runs a
+    // program. The allowlist lives in its own module so it can be unit-tested.
+    if (!isAllowedExternalUrl(url)) return;
+    shell.openExternal(url);
   });
 }
 

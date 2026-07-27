@@ -9,5 +9,12 @@ contextBridge.exposeInMainWorld('cubeclient', {
   },
   launchProfile: (profileId) => ipcRenderer.send('launch-profile', profileId),
   startLogin: () => ipcRenderer.send('start-login'),
+  cancelLogin: () => ipcRenderer.send('cancel-login'),
   openLog: (profileId) => ipcRenderer.send('open-log', profileId),
+  copyToClipboard: (text) => ipcRenderer.send('copy-to-clipboard', text),
+  // The main process validates the host before handing anything to the OS.
+  openExternal: (url) => ipcRenderer.send('open-external', url),
+  minimize: () => ipcRenderer.send('window-minimize'),
+  maximize: () => ipcRenderer.send('window-maximize'),
+  close: () => ipcRenderer.send('window-close'),
 });
