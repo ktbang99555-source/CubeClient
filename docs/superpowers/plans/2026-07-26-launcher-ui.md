@@ -15,8 +15,16 @@
   - ground `#0f1216`, panel `#151a20`, border `#232932`
   - text `#e4e8ee`, muted `#8a94a3`
   - accent `#2fa968`, warning `#e0a23c`
-- Accent is used on the Play button and nowhere else.
-- Corner radius 10–14px.
+- **Accent marks the primary action and the current state — never decoration.** The Play
+  button, focus rings, the active rail item, the progress fill, the selected version row,
+  and a modal's primary button. It never appears as a border, a background wash, or an
+  ornament. (The spec's shorthand was "실행 버튼 한 곳에만"; that was written against the
+  hero alone, before the rail and the dropdown had states to mark. The rule it meant is
+  the one stated here, and Task 1's stylesheet is built to it.)
+- **Corner radius: 10–14px for panels, cards, and full-width controls.** Small nested
+  controls take a proportionally smaller radius — the window buttons 6px, dropdown rows
+  7px, modal buttons 9px. A 12px radius on a 28px-tall button reads as a lozenge, not a
+  rounded rectangle.
 - **System font stacks only.** No webfont URLs — an offline silent fallback is worse than choosing system fonts outright. Digits use a monospace stack with `font-variant-numeric: tabular-nums`.
 - **The UI never says "프로필".** It reads as "account". The user-facing word is **"버전"**. The internal `Profile` record keeps its name.
 - **Account and version never share a screen region.** Account lives only in the title bar; version only in the hero dropdown.
