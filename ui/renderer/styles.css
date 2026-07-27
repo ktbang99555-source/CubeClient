@@ -218,6 +218,7 @@ progress::-webkit-progress-value { background: var(--accent); border-radius: 999
 .version-list button:hover:not(:disabled) { background: #1a2029; }
 .version-list button[aria-current="true"] { color: var(--accent); }
 .version-list button:disabled { color: var(--muted); cursor: default; }
+.version-list button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* --- status bar --- */
 #statusbar { display: flex; gap: 10px; flex: none; }
