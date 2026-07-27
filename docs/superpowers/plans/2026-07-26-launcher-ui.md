@@ -1836,6 +1836,18 @@ if (typeof window !== 'undefined' && window.cubeclient) {
     }
   });
 
+  // Escape closes the sign-in modal. It lives here rather than in the modal component
+  // because that component is a pure render function called on every phase change —
+  // attaching a listener there would register a new one per render and leak. One
+  // document-level listener, owned by the wiring, is the whole story.
+  document.addEventListener('keydown', (domEvent) => {
+    if (domEvent.key !== 'Escape') return;
+    if (!store.getState().login) return;
+    api.cancelLogin();
+    store.setLogin(null);
+    draw();
+  });
+
   api.onBackendEvent((event) => {
     store.apply(event);
     draw();
