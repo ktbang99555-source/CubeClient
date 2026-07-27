@@ -1,0 +1,20 @@
+pluginManagement {
+    repositories {
+        maven {
+            name = 'Fabric'
+            url = 'https://maven.fabricmc.net/'
+        }
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+plugins {
+    // No JDK 21 is installed on this machine (only JDK 17), but build.gradle's java toolchain
+    // requires 21 to compile for Minecraft 1.21.4. This lets Gradle auto-download a matching
+    // JDK instead of failing with "no compatible toolchain found". Not in the original brief
+    // template; added because the brief's own toolchain block cannot succeed without it here.
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
+rootProject.name = 'cubeclient-mod'

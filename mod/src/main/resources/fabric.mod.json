@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "cubeclient-mod",
+  "version": "${version}",
+  "name": "CubeClient Mod",
+  "description": "The bundled HUD and quality-of-life modpack for the CubeClient launcher.",
+  "authors": ["CubeClient"],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "main": ["com.cubeclient.mod.CubeClientMod"],
+    "client": ["com.cubeclient.mod.CubeClientModClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "1.21.4",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}

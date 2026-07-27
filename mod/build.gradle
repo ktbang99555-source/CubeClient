@@ -1,0 +1,52 @@
+plugins {
+    id 'fabric-loom' version '1.10.2'
+    id 'maven-publish'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    mavenCentral()
+}
+
+loom {
+    // No mixins in this mod — every hook it needs is a public Fabric API event, so the
+    // default mixin refmap machinery is unused weight. Left at Loom's default (nothing
+    // declared) rather than explicitly disabled, since there is nothing to disable.
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    testImplementation "org.junit.jupiter:junit-jupiter:5.10.2"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+
+java {
+    // Minecraft 1.21.4 requires Java 21 to run — this is not a style choice, the game will not
+    // start on an older runtime. Matches VersionDetail.javaMajorVersion() for this version on
+    // the launcher side.
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+tasks.test {
+    useJUnitPlatform()
+}
+
+tasks.processResources {
+    inputs.property "version", project.version
+    filteringCharset "UTF-8"
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version
+    }
+}
