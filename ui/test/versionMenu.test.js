@@ -20,6 +20,22 @@ test('label reads as version and loader, never as a profile id', () => {
   expect(formatVersionLabel(PROFILES[1])).toBe('1.21.4 · 바닐라');
 });
 
+// profiles.json is user-editable, so a hand-edited entry can reach this function
+// with the field missing entirely. "1.21.4 · undefined" is worse than saying so.
+test('a missing loader reads as unknown rather than undefined', () => {
+  const label = formatVersionLabel({ id: 'x', mcVersion: '1.21.4', mods: [] });
+
+  expect(label).not.toContain('undefined');
+  expect(label).toBe('1.21.4 · 알 수 없음');
+});
+
+test('a null loader reads as unknown rather than null', () => {
+  const label = formatVersionLabel({ id: 'x', mcVersion: '1.21.4', loader: null, mods: [] });
+
+  expect(label).not.toContain('null');
+  expect(label).toBe('1.21.4 · 알 수 없음');
+});
+
 test('closed menu shows only the selected version on the trigger', () => {
   renderVersionMenu({ profiles: PROFILES, selectedId: 'fabric-1.21', open: false }, container);
 

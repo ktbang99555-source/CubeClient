@@ -6,7 +6,7 @@
 const LOADER_LABELS = { vanilla: '바닐라', fabric: 'Fabric' };
 
 function formatVersionLabel(profile) {
-  const loader = LOADER_LABELS[profile.loader] || profile.loader;
+  const loader = LOADER_LABELS[profile.loader] || profile.loader || '알 수 없음';
   return `${profile.mcVersion} · ${loader}`;
 }
 
