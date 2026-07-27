@@ -37,6 +37,16 @@ public class ModListScreen extends Screen {
     private TextFieldWidget searchField;
     private final List<FeatureCard> cards = new ArrayList<>();
 
+    /**
+     * Set when a rebuild is needed, acted on at the start of the next frame.
+     *
+     * <p>Favoriting re-sorts the grid, and a card's own click handler is what triggers it — so
+     * rebuilding there would tear down and replace the widget list while Minecraft is still
+     * dispatching the mouse event through the very card that asked for it. Deferring one frame
+     * keeps the mutation outside that dispatch entirely.
+     */
+    private boolean rebuildQueued;
+
     public ModListScreen(Screen parent, FeatureRegistry registry, ConfigStore configStore) {
         super(Text.literal("클라이언트 설정"));
         this.parent = parent;
@@ -52,21 +62,23 @@ public class ModListScreen extends Screen {
         int tabX = 12;
         for (Category category : Category.values()) {
             Category thisCategory = category;
+            // Queued rather than immediate: every one of these fires from inside Minecraft's
+            // own input dispatch, and rebuilding replaces the widget list being dispatched over.
             addDrawableChild(ButtonWidget.builder(Text.literal(category.displayName()), b -> {
                 this.activeCategory = thisCategory;
-                rebuildCards();
+                rebuildQueued = true;
             }).dimensions(tabX, tabY, 70, 20).build());
             tabX += 74;
         }
         addDrawableChild(ButtonWidget.builder(Text.literal("전부"), b -> {
             this.activeCategory = null;
-            rebuildCards();
+            rebuildQueued = true;
         }).dimensions(tabX, tabY, 70, 20).build());
 
         searchField = new TextFieldWidget(textRenderer, width - 160, tabY, 148, 20, Text.literal("모드 검색"));
         searchField.setChangedListener(text -> {
             this.searchText = text;
-            rebuildCards();
+            rebuildQueued = true;
         });
         addDrawableChild(searchField);
 
@@ -129,8 +141,9 @@ public class ModListScreen extends Screen {
         }
         config = new ModConfig(config.enabled(), favorites);
         persist();
-        // Favorite order changed, so the grid must re-sort, not just repaint.
-        rebuildCards();
+        // Favorite order changed, so the grid must re-sort rather than just repaint — but not
+        // from inside this click. See rebuildQueued.
+        rebuildQueued = true;
     }
 
     private void persist() {
@@ -146,6 +159,11 @@ public class ModListScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        if (rebuildQueued) {
+            rebuildQueued = false;
+            rebuildCards();
+        }
+
         context.fill(0, 0, width, height, Theme.GROUND);
         super.render(context, mouseX, mouseY, delta);
         context.drawCenteredTextWithShadow(textRenderer, title, width / 2, 8, Theme.TEXT);
