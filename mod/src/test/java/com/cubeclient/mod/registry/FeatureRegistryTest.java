@@ -71,6 +71,34 @@ class FeatureRegistryTest {
         assertEquals(List.of("cps", "fps", "zoom"), result.stream().map(Feature::id).toList());
     }
 
+    // The test above cannot actually catch a broken category level: its names happen to sort into
+    // the same order the categories do, so dropping the category comparator entirely leaves the
+    // result unchanged. This one makes the two disagree — name order says Apple first, category
+    // order says the HUD entry first — so it fails the moment category stops being consulted.
+    @Test
+    void categoryOutranksNameWhenTheTwoDisagree() {
+        FeatureRegistry registry = new FeatureRegistry();
+        registry.register(new TestFeature("ctrl-a", "Apple", Category.CONTROL));
+        registry.register(new TestFeature("hud-z", "Zebra", Category.HUD));
+
+        List<Feature> result = registry.list(null, "", Set.of());
+
+        assertEquals(List.of("hud-z", "ctrl-a"), result.stream().map(Feature::id).toList());
+    }
+
+    // Likewise for the name level: registering in reverse-alphabetical order means insertion
+    // order alone would produce the wrong answer, so this fails if names stop being compared.
+    @Test
+    void nameOrdersFeaturesInsideOneCategoryRegardlessOfRegistrationOrder() {
+        FeatureRegistry registry = new FeatureRegistry();
+        registry.register(new TestFeature("zulu", "Zulu", Category.HUD));
+        registry.register(new TestFeature("alpha", "Alpha", Category.HUD));
+
+        List<Feature> result = registry.list(null, "", Set.of());
+
+        assertEquals(List.of("alpha", "zulu"), result.stream().map(Feature::id).toList());
+    }
+
     @Test
     void registeringTheSameIdTwiceIsRejected() {
         FeatureRegistry registry = new FeatureRegistry();
