@@ -1,8 +1,40 @@
 <!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><title>CubeClient</title></head>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>CubeClient</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
 <body>
-  <div id="app"></div>
+  <div id="titlebar">
+    <span class="brand">CubeClient</span>
+    <span class="spacer"></span>
+    <div id="account-slot"></div>
+    <button class="winbtn" id="win-min" title="최소화">&#8211;</button>
+    <button class="winbtn" id="win-max" title="최대화">&#9633;</button>
+    <button class="winbtn close" id="win-close" title="닫기">&#10005;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="rail" aria-label="주 메뉴">
+      <button aria-current="page" title="홈">&#9636;</button>
+      <button title="버전">&#9670;</button>
+      <button title="로그">&#9638;</button>
+      <span class="grow"></span>
+      <button title="설정">&#9881;</button>
+    </nav>
+    <main id="main">
+      <section id="hero"></section>
+      <div id="statusbar"></div>
+    </main>
+  </div>
+
+  <div id="modal-root"></div>
+
+  <script src="components/hero.js"></script>
+  <script src="components/versionMenu.js"></script>
+  <script src="components/statusBar.js"></script>
+  <script src="components/loginModal.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>
