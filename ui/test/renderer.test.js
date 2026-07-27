@@ -25,6 +25,34 @@ test('a profiles event selects the first version so Play always has a target', (
   expect(store.getState().selectedId).toBe('fabric-1.21');
 });
 
+// The window opens about a second before the backend answers. Play must not be
+// pressable in that window, and must become pressable the moment it is answered.
+test('Play has no target until the version list arrives', () => {
+  const store = createStore();
+  expect(store.getState().hero.canPlay).toBe(false);
+
+  store.apply({ type: 'profiles', profiles: PROFILES });
+  expect(store.getState().hero.canPlay).toBe(true);
+});
+
+test('an empty version list leaves Play without a target', () => {
+  const store = createStore();
+  store.apply({ type: 'profiles', profiles: [] });
+
+  expect(store.getState().selectedId).toBeNull();
+  expect(store.getState().hero.canPlay).toBe(false);
+});
+
+// A launch in flight must not have its progress replaced by an idle hero just because
+// the version list happened to be re-read.
+test('a profiles event does not interrupt a launch in progress', () => {
+  const store = createStore();
+  store.apply({ type: 'progress', stage: 'assets', percent: 40 });
+  store.apply({ type: 'profiles', profiles: PROFILES });
+
+  expect(store.getState().hero.mode).toBe('preparing');
+});
+
 test('a later profiles event keeps the current selection if it still exists', () => {
   const store = createStore();
   store.apply({ type: 'profiles', profiles: PROFILES });
@@ -189,7 +217,9 @@ test('signing in updates the greeting the hero renders', () => {
   const store = createStore();
   store.apply({ type: 'login_success', username: 'Mal_itIIyr', uuid: 'abc' });
 
-  expect(store.getState().hero).toEqual({ mode: 'idle', username: 'Mal_itIIyr' });
+  expect(store.getState().hero).toEqual({
+    mode: 'idle', username: 'Mal_itIIyr', canPlay: false,
+  });
 });
 
 // An unknown event type must be ignored, not crash the renderer: the backend can grow

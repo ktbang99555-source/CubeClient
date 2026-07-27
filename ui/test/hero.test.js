@@ -26,6 +26,21 @@ test('idle without an account still offers Play', () => {
   expect(container.textContent).not.toContain('null');
 });
 
+// The version list arrives from the backend about a second after the window opens.
+// Reported as "PLAY를 눌러도 아무것도 안 돼": the button was live but had no target,
+// so pressing it was a silent no-op.
+test('Play is disabled while there is no version to launch', () => {
+  renderHero({ mode: 'idle', username: null, canPlay: false }, container);
+
+  expect(container.querySelector('[data-action="play"]').disabled).toBe(true);
+});
+
+test('Play is enabled once a version is available', () => {
+  renderHero({ mode: 'idle', username: null, canPlay: true }, container);
+
+  expect(container.querySelector('[data-action="play"]').disabled).toBe(false);
+});
+
 test('preparing shows the stage, a progress bar, and no Play button', () => {
   renderHero({ mode: 'preparing', stage: 'assets', percent: 72, detail: '1204 / 4040' }, container);
 

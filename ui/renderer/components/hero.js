@@ -20,7 +20,15 @@ function renderHero(state, container) {
     } else {
       greeting.textContent = '플레이할 준비가 됐습니다';
     }
-    container.append(greeting, heroButton('PLAY', 'play', 'play'));
+    const play = heroButton('PLAY', 'play', 'play');
+    // The version list arrives from the backend about a second after the window opens.
+    // Until then there is nothing to launch, and an enabled button that silently does
+    // nothing reads as a broken launcher — which is exactly how it was reported.
+    if (state.canPlay === false) {
+      play.disabled = true;
+      play.title = '버전을 불러오는 중입니다';
+    }
+    container.append(greeting, play);
     return;
   }
 

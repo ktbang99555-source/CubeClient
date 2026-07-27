@@ -152,7 +152,8 @@ html, body {
   cursor: pointer;
   box-shadow: 0 8px 22px rgba(47, 169, 104, 0.28);
 }
-.play:hover { filter: brightness(1.07); }
+.play:hover:not(:disabled) { filter: brightness(1.07); }
+.play:disabled { opacity: 0.4; box-shadow: none; cursor: default; }
 .play:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
 
 .stop {

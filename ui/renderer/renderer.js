@@ -12,12 +12,14 @@ function createStore() {
     offline: true,
     javaVersion: null,
     lastRun: null,
-    hero: { mode: 'idle', username: null },
+    hero: { mode: 'idle', username: null, canPlay: false },
     login: null,
   };
 
   function idle() {
-    state.hero = { mode: 'idle', username: state.username };
+    // canPlay travels with the hero state so the button can say "not yet" instead of
+    // being pressable and doing nothing while the version list is still on its way.
+    state.hero = { mode: 'idle', username: state.username, canPlay: state.selectedId !== null };
   }
 
   function apply(event) {
@@ -29,6 +31,8 @@ function createStore() {
         if (!state.profiles.some((p) => p.id === state.selectedId)) {
           state.selectedId = state.profiles.length ? state.profiles[0].id : null;
         }
+        // The hero carries canPlay, so it has to be rebuilt when a target appears.
+        if (state.hero.mode === 'idle') idle();
         break;
 
       case 'progress':
