@@ -10,10 +10,17 @@ pluginManagement {
 }
 
 plugins {
-    // No JDK 21 is installed on this machine (only JDK 17), but build.gradle's java toolchain
-    // requires 21 to compile for Minecraft 1.21.4. This lets Gradle auto-download a matching
-    // JDK instead of failing with "no compatible toolchain found". Not in the original brief
-    // template; added because the brief's own toolchain block cannot succeed without it here.
+    // build.gradle's java toolchain requires JDK 21 (Minecraft 1.21.4's own requirement). This
+    // plugin is meant to let Gradle auto-download a matching JDK rather than failing with "no
+    // compatible toolchain found" on a machine that has none.
+    //
+    // UNVERIFIED: that auto-download path has never actually run. Every build so far has used a
+    // JDK 21 supplied through JAVA_HOME (on the machine this was scaffolded on, that is
+    // C:\Users\Skdji\devtools\jdk21\jdk-21.0.11+10 — note the nested version directory, the
+    // parent alone is not a valid JAVA_HOME), so the resolver was never the thing that satisfied
+    // the toolchain. Treat it as an untested fallback: if you are building without a local JDK 21
+    // and it fails — offline, or behind a proxy that blocks the foojay disco API — install a
+    // JDK 21 and point JAVA_HOME at it rather than debugging this plugin.
     id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
 }
 
