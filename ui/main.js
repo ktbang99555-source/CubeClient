@@ -15,6 +15,18 @@ const JAR_PATH = path.join(
   'cubeclient-launcher-backend.jar'
 );
 
+// The version number in the filename must match mod/gradle.properties' mod_version — if that
+// value changes, this constant has to change with it. (A follow-up beyond B0 would read this
+// from a manifest instead of hardcoding the version twice; not worth it for one call site yet.)
+const MOD_JAR_PATH = path.join(
+  __dirname,
+  '..',
+  'mod',
+  'build',
+  'libs',
+  'cubeclient-mod-0.1.0.jar'
+);
+
 function appDataDir() {
   const base = process.env.APPDATA || app.getPath('userData');
   return path.join(base, 'CubeClient');
@@ -156,7 +168,10 @@ function createWindow() {
       return;
     }
 
-    startBackend(JAR_PATH, 'launch', [profileId], send, undefined, javaCommand, session);
+    // Absent in a dev checkout where mod/ hasn't been built yet — the backend already treats a
+    // missing third argument as "no modpack this run" rather than an error.
+    const launchArgs = fs.existsSync(MOD_JAR_PATH) ? [profileId, MOD_JAR_PATH] : [profileId];
+    startBackend(JAR_PATH, 'launch', launchArgs, send, undefined, javaCommand, session);
   });
 
   // Tracked so the modal's 취소 button (and Escape) can actually stop the sign-in rather
