@@ -25,6 +25,9 @@ public class JvmArgsBuilder {
                               Path javaBin, Session session, InstalledLoader loader) {
         List<String> command = new ArrayList<>();
         command.add(javaBin.toString());
+        // Told to the mod so mod-config.json lives at the shared %APPDATA%/CubeClient root and
+        // is the same file no matter which profile (version) is launched.
+        command.add("-Dcubeclient.configDir=" + sharedRoot);
         command.add("-cp");
         command.add(buildClasspath(detail, sharedRoot, loader));
         // Fabric boots through its own launcher, which then loads Minecraft. Keeping the vanilla

@@ -35,8 +35,10 @@ class JvmArgsBuilderTest {
             .build(profile, detail, gameDir, sharedRoot, javaBin, Session.offline(profile.id()), InstalledLoader.none());
 
         assertEquals(javaBin.toString(), command.get(0));
-        assertEquals("-cp", command.get(1));
-        String classpath = command.get(2);
+        // The mod-config system property is a JVM arg and must precede -cp like any other.
+        assertEquals("-Dcubeclient.configDir=" + sharedRoot, command.get(1));
+        assertEquals("-cp", command.get(2));
+        String classpath = command.get(3);
         List<String> classpathEntries = List.of(classpath.split(java.util.regex.Pattern.quote(File.pathSeparator)));
         assertEquals(2, classpathEntries.size());
         // Shared trees must sit directly under sharedRoot, NOT nested inside instances/.
@@ -46,7 +48,7 @@ class JvmArgsBuilderTest {
         assertEquals(
             sharedRoot.resolve(Path.of("versions", "1.21.4", "1.21.4.jar")).toString(),
             classpathEntries.get(1));
-        assertEquals("net.minecraft.client.main.Main", command.get(3));
+        assertEquals("net.minecraft.client.main.Main", command.get(4));
         assertTrue(command.contains("--version"));
         assertTrue(command.contains("1.21.4"));
 
@@ -123,10 +125,29 @@ class JvmArgsBuilderTest {
             Session.offline("fabric-1.21"),
             loader);
 
-        assertEquals("net.fabricmc.loader.impl.launch.knot.KnotClient", command.get(3));
-        String classpath = command.get(2);
+        assertEquals("net.fabricmc.loader.impl.launch.knot.KnotClient", command.get(4));
+        String classpath = command.get(3);
         assertTrue(classpath.startsWith(loaderJar.toString()),
             "loader jars must come first; got " + classpath);
+    }
+
+    // The mod resolves its own config location from this property; without it every profile
+    // would fall back to Fabric's per-instance config dir, which is exactly the per-version
+    // storage the design rejected in favour of one shared file.
+    @Test
+    void setsTheModConfigDirectoryToTheSharedRoot() {
+        Path sharedRoot = Path.of("C:", "AppData", "CubeClient");
+        List<String> command = new JvmArgsBuilder().build(
+            new Profile("v", "1.21.4", "vanilla", List.of()),
+            sampleDetail(),
+            sharedRoot.resolve(Path.of("instances", "v")),
+            sharedRoot,
+            sharedRoot.resolve(Path.of("runtimes", "21", "bin", "java.exe")),
+            Session.offline("v"),
+            InstalledLoader.none());
+
+        assertTrue(command.contains("-Dcubeclient.configDir=" + sharedRoot),
+            "actual: " + command);
     }
 
     @Test
@@ -142,7 +163,7 @@ class JvmArgsBuilderTest {
             Session.offline("v"),
             InstalledLoader.none());
 
-        assertEquals("net.minecraft.client.main.Main", command.get(3));
+        assertEquals("net.minecraft.client.main.Main", command.get(4));
     }
 
     // Fabric ships its own ASM. Leaving the game's copy on the classpath makes the loader abort
@@ -174,7 +195,7 @@ class JvmArgsBuilderTest {
             sharedRoot,
             sharedRoot.resolve(Path.of("runtimes", "21", "bin", "java.exe")),
             Session.offline("fabric-1.21"),
-            loader).get(2);
+            loader).get(3);
 
         assertTrue(classpath.contains("asm-9.10.1.jar"), classpath);
         assertFalse(classpath.contains("asm-9.6.jar"), "vanilla ASM must be dropped: " + classpath);
