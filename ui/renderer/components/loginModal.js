@@ -31,22 +31,22 @@ function renderLoginModal(state, container) {
     modal.append(
       heading('로그인 준비 중…'),
       paragraph('잠시만 기다려 주세요.'),
-      row([button('취소', 'cancel-login')])
+      row([modalButton('취소', 'cancel-login')])
     );
   } else if (state.phase === 'code') {
     const code = document.createElement('div');
     code.className = 'code';
     code.textContent = state.userCode || '';
 
-    const openButton = button('브라우저에서 열기', 'open-verification', true);
+    const openButton = modalButton('브라우저에서 열기', 'open-verification', true);
     openButton.dataset.uri = state.verificationUri || '';
 
     modal.append(
       heading('Microsoft 계정으로 로그인'),
       paragraph('브라우저에서 아래 코드를 입력하세요. 완료될 때까지 기다립니다.'),
       code,
-      row([openButton, button('코드 복사', 'copy-code')]),
-      row([button('취소', 'cancel-login')])
+      row([openButton, modalButton('코드 복사', 'copy-code')]),
+      row([modalButton('취소', 'cancel-login')])
     );
   } else if (state.phase === 'failed') {
     const failure = document.createElement('p');
@@ -56,7 +56,7 @@ function renderLoginModal(state, container) {
     modal.append(
       heading('로그인하지 못했습니다'),
       failure,
-      row([button('다시 시도', 'retry-login', true), button('닫기', 'close-login')])
+      row([modalButton('다시 시도', 'retry-login', true), modalButton('닫기', 'close-login')])
     );
   } else {
     // An unrecognised phase (a typo'd string, a renamed phase after a backend change)
@@ -94,7 +94,10 @@ function row(children) {
   return element;
 }
 
-function button(label, action, primary = false) {
+// Named for its component, not for what it builds — see the note in hero.js. These two
+// were both called `button` with different third parameters, and the modal's definition
+// won, so the Play button came out styled as a modal button.
+function modalButton(label, action, primary = false) {
   const element = document.createElement('button');
   if (primary) element.className = 'primary';
   element.dataset.action = action;

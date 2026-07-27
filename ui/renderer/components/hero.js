@@ -20,7 +20,7 @@ function renderHero(state, container) {
     } else {
       greeting.textContent = '플레이할 준비가 됐습니다';
     }
-    container.append(greeting, button('PLAY', 'play', 'play'));
+    container.append(greeting, heroButton('PLAY', 'play', 'play'));
     return;
   }
 
@@ -49,17 +49,20 @@ function renderHero(state, container) {
     const label = document.createElement('div');
     label.className = 'greeting';
     label.textContent = '실행 중…';
-    container.append(label, button('종료', 'stop', 'stop'));
+    container.append(label, heroButton('종료', 'stop', 'stop'));
     return;
   }
 
   const failure = document.createElement('div');
   failure.className = 'hero-error';
   failure.textContent = state.message;
-  container.append(failure, button('다시 시도', 'retry', 'stop'));
+  container.append(failure, heroButton('다시 시도', 'retry', 'stop'));
 }
 
-function button(label, action, className) {
+// Named for its component, not for what it builds: index.html loads every component as a
+// classic <script> into one shared global, so a bare `button` here and a bare `button` in
+// another component silently overwrite each other. componentScripts.test.js guards this.
+function heroButton(label, action, className) {
   const element = document.createElement('button');
   element.className = className;
   element.dataset.action = action;
