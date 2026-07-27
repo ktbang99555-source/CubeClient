@@ -115,7 +115,7 @@ public final class Main {
             Path gameDir = appData.resolve("instances").resolve(profile.id());
 
             return launchCommand.run(
-                profile, gameDir, appData, adoptiumOsName(), readSession(profile));
+                profile, gameDir, appData, adoptiumOsName(), readSession());
         } catch (IOException e) {
             events.error("launch", e.getMessage());
             return 1;
@@ -146,14 +146,21 @@ public final class Main {
      *
      * <p>The token arrives over stdin rather than as a command-line argument because arguments
      * are visible to any process that can list the process table. Electron holds the encrypted
-     * token and writes this line; when nothing is piped in, the launch falls back to an offline
-     * session that starts the game but cannot join servers.
+     * token and writes this line.
+     *
+     * <p>A launch with nothing piped in is refused. It used to fall back to an offline session,
+     * which starts the game for someone who may never have bought it — signing in is how
+     * ownership is established, and a launcher that skips it is a way around that. Tests that
+     * need an offline session build one directly and hand it to {@link LaunchCommand}; only
+     * this command-line entry point is closed.
      */
-    private static Session readSession(Profile profile) throws IOException {
+    static Session readSession() throws IOException {
         String line = new java.io.BufferedReader(
             new java.io.InputStreamReader(System.in, java.nio.charset.StandardCharsets.UTF_8)).readLine();
         if (line == null || line.isBlank()) {
-            return Session.offline(profile.id());
+            throw new IOException(
+                "No account on stdin. Sign in with the launcher first — CubeClient will not "
+                    + "start Minecraft without an account.");
         }
         try {
             var json = com.google.gson.JsonParser.parseString(line).getAsJsonObject();
