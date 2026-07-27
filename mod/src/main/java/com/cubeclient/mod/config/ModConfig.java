@@ -1,5 +1,8 @@
 package com.cubeclient.mod.config;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -8,11 +11,39 @@ import java.util.Set;
  * Deliberately flat and Gson-friendly — no nested objects, no custom (de)serializer needed.
  */
 public record ModConfig(Map<String, Boolean> enabled, Set<String> favorites) {
+
+    /**
+     * Normalises what Gson hands back, because a config file is user-reachable and an older
+     * version of this mod may have written a different shape.
+     *
+     * <p>Gson builds a record through its canonical constructor and substitutes nothing for a
+     * field the JSON does not mention, so {@code {}} or a file carrying only {@code enabled}
+     * arrives here with a null component — and the first {@link #isEnabled} call would crash the
+     * game. Null becomes empty instead.
+     *
+     * <p>The copy also settles a second inconsistency: {@link #empty()} hands out immutable
+     * collections while Gson builds mutable ones, so whether a caller could mutate the config in
+     * place depended on whether the player already had a config file. Now it never can, either
+     * way. {@code LinkedHashMap}/{@code LinkedHashSet} rather than {@code Map.copyOf}/
+     * {@code Set.copyOf} because those reject null values, which a hand-edited file can contain.
+     */
+    public ModConfig {
+        enabled = enabled == null
+            ? Map.of()
+            : Collections.unmodifiableMap(new LinkedHashMap<>(enabled));
+        favorites = favorites == null
+            ? Set.of()
+            : Collections.unmodifiableSet(new LinkedHashSet<>(favorites));
+    }
+
     public static ModConfig empty() {
         return new ModConfig(Map.of(), Set.of());
     }
 
     public boolean isEnabled(String featureId) {
-        return enabled.getOrDefault(featureId, false);
+        // Read into a Boolean first: a hand-edited file can hold an explicit null, and
+        // unboxing that into this method's boolean return would throw.
+        Boolean value = enabled.get(featureId);
+        return value != null && value;
     }
 }

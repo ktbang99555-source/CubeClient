@@ -11,6 +11,8 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConfigStoreTest {
@@ -68,6 +70,65 @@ class ConfigStoreTest {
         assertTrue(Files.exists(tempDir.resolve("mod-config.json.bak")),
             "the corrupt file should be preserved, not deleted");
         assertEquals("{ not valid json", Files.readString(tempDir.resolve("mod-config.json.bak")));
+    }
+
+    // A config written by an older version of the mod, or hand-edited, can be missing a key
+    // entirely. Gson builds records through the canonical constructor and substitutes nothing
+    // for an absent field, so without normalisation these arrive null and the first isEnabled
+    // call crashes the game.
+    @Test
+    void aConfigMissingKeysEntirelyLoadsAsEmptyRatherThanNull() throws IOException {
+        Path file = tempDir.resolve("mod-config.json");
+        Files.writeString(file, "{}");
+
+        ModConfig loaded = new ConfigStore(file).load();
+
+        assertNotNull(loaded.enabled(), "a missing 'enabled' key must not become null");
+        assertNotNull(loaded.favorites(), "a missing 'favorites' key must not become null");
+        assertFalse(loaded.isEnabled("fps"));
+    }
+
+    @Test
+    void aConfigWithOnlyOneOfTheTwoKeysLoadsCleanly() throws IOException {
+        Path file = tempDir.resolve("mod-config.json");
+        Files.writeString(file, """
+            { "enabled": { "fps": true } }
+            """);
+
+        ModConfig loaded = new ConfigStore(file).load();
+
+        assertTrue(loaded.isEnabled("fps"));
+        assertTrue(loaded.favorites().isEmpty());
+    }
+
+    // A hand-edited file can carry a null value. Unboxing that into isEnabled's boolean return
+    // would throw, so an absent value has to read as "off".
+    @Test
+    void aNullValueInsideEnabledReadsAsOff() throws IOException {
+        Path file = tempDir.resolve("mod-config.json");
+        Files.writeString(file, """
+            { "enabled": { "fps": null }, "favorites": [] }
+            """);
+
+        ModConfig loaded = new ConfigStore(file).load();
+
+        assertFalse(loaded.isEnabled("fps"));
+    }
+
+    // ModConfig.empty() hands out immutable Map.of()/Set.of(), but Gson builds mutable
+    // collections when it deserialises a file. Callers must not have to know which one they got
+    // — otherwise code that works for a returning user throws for a fresh install, or vice versa.
+    @Test
+    void loadedCollectionsAreImmutableJustLikeAnEmptyConfig() throws IOException {
+        Path file = tempDir.resolve("mod-config.json");
+        Files.writeString(file, """
+            { "enabled": { "fps": true }, "favorites": ["fps"] }
+            """);
+
+        ModConfig loaded = new ConfigStore(file).load();
+
+        assertThrows(UnsupportedOperationException.class, () -> loaded.enabled().put("cps", true));
+        assertThrows(UnsupportedOperationException.class, () -> loaded.favorites().add("cps"));
     }
 
     @Test
