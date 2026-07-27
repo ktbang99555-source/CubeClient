@@ -8,6 +8,11 @@
  * unexpected field cannot be drawn by accident.
  */
 function renderLoginModal(state, container) {
+  // Captured before clearing: this is how we tell "the modal just opened" (move
+  // focus in) apart from "the modal is re-rendering for a phase change" (leave
+  // focus wherever the user had tabbed to).
+  const wasClosed = container.children.length === 0;
+
   container.replaceChildren();
   if (!state) return;
 
@@ -18,6 +23,9 @@ function renderLoginModal(state, container) {
   modal.className = 'modal';
   modal.setAttribute('role', 'dialog');
   modal.setAttribute('aria-modal', 'true');
+  // Programmatically focusable so it can receive focus on open, without adding it
+  // to the normal tab order.
+  modal.tabIndex = -1;
 
   if (state.phase === 'starting') {
     modal.append(
@@ -28,10 +36,10 @@ function renderLoginModal(state, container) {
   } else if (state.phase === 'code') {
     const code = document.createElement('div');
     code.className = 'code';
-    code.textContent = state.userCode;
+    code.textContent = state.userCode || '';
 
     const openButton = button('브라우저에서 열기', 'open-verification', true);
-    openButton.dataset.uri = state.verificationUri;
+    openButton.dataset.uri = state.verificationUri || '';
 
     modal.append(
       heading('Microsoft 계정으로 로그인'),
@@ -40,20 +48,31 @@ function renderLoginModal(state, container) {
       row([openButton, button('코드 복사', 'copy-code')]),
       row([button('취소', 'cancel-login')])
     );
-  } else {
+  } else if (state.phase === 'failed') {
     const failure = document.createElement('p');
     failure.className = 'failure';
-    failure.textContent = state.message;
+    failure.textContent = state.message || '알 수 없는 이유로 로그인하지 못했습니다.';
 
     modal.append(
       heading('로그인하지 못했습니다'),
       failure,
       row([button('다시 시도', 'retry-login', true), button('닫기', 'close-login')])
     );
+  } else {
+    // An unrecognised phase (a typo'd string, a renamed phase after a backend change)
+    // must not fall through to the failure screen — that would tell the user their
+    // sign-in failed when nothing of the kind happened. Leave the container empty
+    // instead; it was already cleared at the top of this function.
+    return;
   }
 
   backdrop.append(modal);
   container.append(backdrop);
+
+  // Only steal focus when the modal is opening, not on every re-render — otherwise
+  // a phase change (e.g. starting -> code) would yank focus back from wherever the
+  // user had already tabbed to.
+  if (wasClosed) modal.focus();
 }
 
 function heading(text) {
