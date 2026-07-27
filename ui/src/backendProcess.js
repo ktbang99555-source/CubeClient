@@ -66,8 +66,12 @@ function startBackend(
     try {
       event = JSON.parse(line);
     } catch (err) {
-      // The backend also writes non-JSON noise (JVM warnings, stack traces) to this stream.
-      // Dropping it is deliberate: one malformed line must not take down the launcher.
+      // The backend also writes non-JSON noise (JVM warnings) to this stream, and one
+      // malformed line must not take down the launcher. But dropping it without a trace
+      // made a swallowed `profiles` line indistinguishable from a backend that ran and
+      // did nothing at all. Reported as its own event so the main process can log it;
+      // it is not on the renderer allowlist, so it goes no further.
+      onEvent({ type: 'backend_noise', line });
       return;
     }
     onEvent(event);

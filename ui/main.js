@@ -61,6 +61,8 @@ function createWindow() {
   const send = (event) => {
     // Only the type: the auth_result event carries a token, and this goes to a terminal.
     if (debug) console.error('[backend event]', event.type);
+    // The exception: an unparseable line is only useful if you can see it.
+    if (debug && event.type === 'backend_noise') console.error('[backend noise]', event.line);
 
     if (event.type === 'auth_result') {
       try {

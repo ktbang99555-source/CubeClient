@@ -30,6 +30,20 @@ function makeFailingProcess(stderrLines, code) {
   return proc;
 }
 
+// A dropped line used to vanish completely, which made a swallowed `profiles` event look
+// exactly like a backend that ran and did nothing — the hardest possible thing to debug.
+test('an unparseable stdout line is reported rather than silently dropped', (done) => {
+  const fakeProcess = makeFakeProcess(['not json at all', '{"type":"launched"}']);
+  const events = [];
+
+  startBackend('/jar', 'list-profiles', [], (event) => {
+    events.push(event);
+    if (event.type !== 'launched') return;
+    expect(events[0]).toEqual({ type: 'backend_noise', line: 'not json at all' });
+    done();
+  }, () => fakeProcess);
+});
+
 test('a failing backend carries its stderr so the cause is not lost', (done) => {
   const fakeProcess = makeFailingProcess(
     ['Error: LinkageError occurred', 'java.lang.UnsupportedClassVersionError: bad version'],
@@ -99,7 +113,10 @@ test('parses JSON lines from stdout and forwards them to onEvent', (done) => {
   );
 });
 
-test('ignores non-JSON lines instead of throwing', (done) => {
+// A malformed line must not throw or stop the stream — the JSON lines after it still
+// have to arrive. It is reported as backend_noise rather than dropped silently, but it
+// is deliberately not a fatal event.
+test('a non-JSON line does not stop the events after it', (done) => {
   const fakeProcess = makeFakeProcess(['not json', '{"type":"pong"}']);
   const spawnFn = jest.fn(() => fakeProcess);
   const events = [];
@@ -107,7 +124,10 @@ test('ignores non-JSON lines instead of throwing', (done) => {
   startBackend('/path/to/backend.jar', 'ping', [], (event) => events.push(event), spawnFn);
 
   setTimeout(() => {
-    expect(events).toEqual([{ type: 'pong' }]);
+    expect(events).toEqual([
+      { type: 'backend_noise', line: 'not json' },
+      { type: 'pong' },
+    ]);
     done();
   }, 50);
 });

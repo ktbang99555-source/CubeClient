@@ -1,5 +1,12 @@
 const { sanitizeForRenderer } = require('../src/rendererEvents');
 
+// backend_noise carries a raw, unvalidated line straight off the backend's stdout. It
+// exists so the main process can log it while debugging; the renderer has no business
+// receiving it, and the allowlist is what keeps it out.
+test('the raw noise event is not forwarded to the renderer', () => {
+  expect(sanitizeForRenderer({ type: 'backend_noise', line: 'whatever' })).toBeNull();
+});
+
 // The single most important guarantee in this file: a credential must never reach the
 // renderer, which is the process that handles untrusted profile data and web content.
 test('strips the access token from auth_result', () => {
