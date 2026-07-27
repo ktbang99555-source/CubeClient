@@ -18,25 +18,39 @@ test('idle shows a greeting with the signed-in name and a Play button', () => {
   expect(play.textContent).toBe('PLAY');
 });
 
-test('idle without an account still offers Play', () => {
+// Signing in is how ownership of the game is established. Offering Play without it would
+// start an offline session for someone who may never have bought Minecraft.
+test('idle without an account offers sign-in instead of Play', () => {
   renderHero({ mode: 'idle', username: null }, container);
 
-  // Signing in is optional: an offline session can still start singleplayer.
-  expect(container.querySelector('[data-action="play"]')).not.toBeNull();
+  expect(container.querySelector('[data-action="play"]')).toBeNull();
+
+  const signIn = container.querySelector('[data-action="account"]');
+  expect(signIn).not.toBeNull();
+  expect(signIn.textContent).toBe('로그인');
   expect(container.textContent).not.toContain('null');
+});
+
+// canPlay is about the version list having arrived. It must not become a back door that
+// reveals Play to someone who has not signed in.
+test('a ready version list does not reveal Play to a signed-out user', () => {
+  renderHero({ mode: 'idle', username: null, canPlay: true }, container);
+
+  expect(container.querySelector('[data-action="play"]')).toBeNull();
+  expect(container.querySelector('[data-action="account"]')).not.toBeNull();
 });
 
 // The version list arrives from the backend about a second after the window opens.
 // Reported as "PLAY를 눌러도 아무것도 안 돼": the button was live but had no target,
 // so pressing it was a silent no-op.
 test('Play is disabled while there is no version to launch', () => {
-  renderHero({ mode: 'idle', username: null, canPlay: false }, container);
+  renderHero({ mode: 'idle', username: 'Steve', canPlay: false }, container);
 
   expect(container.querySelector('[data-action="play"]').disabled).toBe(true);
 });
 
 test('Play is enabled once a version is available', () => {
-  renderHero({ mode: 'idle', username: null, canPlay: true }, container);
+  renderHero({ mode: 'idle', username: 'Steve', canPlay: true }, container);
 
   expect(container.querySelector('[data-action="play"]').disabled).toBe(false);
 });

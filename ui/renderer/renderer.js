@@ -198,7 +198,9 @@ if (typeof window !== 'undefined' && window.cubeclient) {
 
     switch (target.dataset.action) {
       case 'play':
-        if (s.selectedId) api.launchProfile(s.selectedId);
+        // Never without an account: an offline session would start the game for someone
+        // who does not own it. The main process refuses too — this is the polite half.
+        if (s.username && s.selectedId) api.launchProfile(s.selectedId);
         break;
       case 'stop':
       case 'retry':

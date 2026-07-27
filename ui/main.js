@@ -142,6 +142,20 @@ function createWindow() {
     if (typeof profileId !== 'string') return;
     // Decrypted here and handed to the backend over stdin; it is never sent to the renderer.
     const session = authStore.load();
+
+    // Signing in is how ownership of Minecraft is established. Without a session the
+    // backend would fall back to an offline one and start the game for someone who may
+    // never have bought it. The renderer hides Play until sign-in, but the renderer is
+    // the untrusted half — this is where the rule is actually enforced.
+    if (!session) {
+      send({
+        type: 'error',
+        stage: 'launch',
+        message: 'Microsoft 계정으로 로그인한 뒤에 실행할 수 있습니다.',
+      });
+      return;
+    }
+
     startBackend(JAR_PATH, 'launch', [profileId], send, undefined, javaCommand, session);
   });
 

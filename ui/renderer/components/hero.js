@@ -12,14 +12,22 @@ function renderHero(state, container) {
   if (state.mode === 'idle') {
     const greeting = document.createElement('div');
     greeting.className = 'greeting';
-    if (state.username) {
-      greeting.append('다시 오셨네요, ');
-      const name = document.createElement('b');
-      name.textContent = state.username;
-      greeting.append(name);
-    } else {
-      greeting.textContent = '플레이할 준비가 됐습니다';
+
+    // Signing in is how ownership of the game is established. Offering Play without it
+    // would launch an offline session, which starts singleplayer for someone who may
+    // never have bought Minecraft — that is what the official launcher's mandatory
+    // sign-in exists to prevent, and this launcher will not be a way around it.
+    if (!state.username) {
+      greeting.textContent = 'Microsoft 계정으로 로그인하면 시작할 수 있습니다';
+      container.append(greeting, heroButton('로그인', 'account', 'play'));
+      return;
     }
+
+    greeting.append('다시 오셨네요, ');
+    const name = document.createElement('b');
+    name.textContent = state.username;
+    greeting.append(name);
+
     const play = heroButton('PLAY', 'play', 'play');
     // The version list arrives from the backend about a second after the window opens.
     // Until then there is nothing to launch, and an enabled button that silently does
