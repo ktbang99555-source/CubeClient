@@ -3,6 +3,33 @@
  * createStore — a pure reducer with no Electron dependency, so the event handling can be
  * tested under jsdom without a window.
  */
+/**
+ * Turns a failed backend exit into something a person can act on.
+ *
+ * When the JVM dies before reaching our code — wrong Java version, missing jar — it says
+ * why on stderr and writes nothing to stdout, so the exit code is all the UI used to
+ * have. "백엔드가 코드 1(으)로 종료됐습니다" tells nobody anything; the first line of
+ * stderr usually names the actual problem.
+ */
+function describeBackendExit(event) {
+  const base = `백엔드가 코드 ${event.code}(으)로 종료됐습니다`;
+  if (!event.stderr) return base;
+
+  const lines = event.stderr.split('\n').map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) return base;
+
+  // Scan every captured line, not just the first: the java launcher reports a version
+  // mismatch as a generic "Error: LinkageError occurred" with the real cause on the
+  // next line, while a direct JVM throw puts it first. Only checking line one missed
+  // the commonest failure on a machine whose PATH java is old.
+  const versionMismatch = lines.find((line) => line.includes('UnsupportedClassVersionError'));
+  if (versionMismatch) {
+    return `${base} — 실행에 쓰인 Java가 너무 낮은 버전입니다. CUBECLIENT_JAVA 환경변수를 Java 17 이상으로 지정하세요.\n\n${versionMismatch}`;
+  }
+
+  return `${base}\n\n${lines[0]}`;
+}
+
 function createStore() {
   const state = {
     profiles: [],
@@ -95,10 +122,7 @@ function createStore() {
             };
           }
         } else if (state.hero.mode !== 'error') {
-          state.hero = {
-            mode: 'error',
-            message: `백엔드가 코드 ${event.code}(으)로 종료됐습니다`,
-          };
+          state.hero = { mode: 'error', message: describeBackendExit(event) };
         }
         break;
 
@@ -126,7 +150,7 @@ function createStore() {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createStore };
+  module.exports = { createStore, describeBackendExit };
 }
 
 // Electron-only wiring. window.cubeclient is exposed by preload.js and is absent under

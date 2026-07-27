@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, safeStorage, shell, clipboard } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { startBackend } = require('./src/backendProcess');
 const { AuthStore } = require('./src/authStore');
 const { sanitizeForRenderer } = require('./src/rendererEvents');
@@ -37,6 +38,20 @@ function createWindow() {
     },
   });
 
+  // Set CUBECLIENT_DEBUG=1 to mirror the renderer's console and the backend's event
+  // stream into this terminal. The renderer is a separate process, so without this its
+  // errors are invisible unless DevTools happens to be open — which made a "nothing
+  // happens" report impossible to diagnose remotely.
+  const debug = Boolean(process.env.CUBECLIENT_DEBUG);
+  if (debug) {
+    win.webContents.on('console-message', (_e, _level, message) => {
+      console.error('[renderer]', message);
+    });
+    win.webContents.on('preload-error', (_e, preloadPath, error) => {
+      console.error('[preload-error]', preloadPath, error && error.message);
+    });
+  }
+
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
   const authStore = new AuthStore(path.join(appDataDir(), 'auth.json'), safeStorage);
@@ -44,6 +59,9 @@ function createWindow() {
   // Every backend event passes through sanitizeForRenderer, which withholds the access token.
   // The renderer must never receive a credential.
   const send = (event) => {
+    // Only the type: the auth_result event carries a token, and this goes to a terminal.
+    if (debug) console.error('[backend event]', event.type);
+
     if (event.type === 'auth_result') {
       try {
         authStore.save(event);
@@ -73,6 +91,10 @@ function createWindow() {
   // Wait for the page to be ready, or the first events are sent into a renderer that has no
   // listener yet and the profile list silently never appears.
   win.webContents.once('did-finish-load', () => {
+    if (debug) {
+      console.error('[main] page loaded; java =', javaCommand);
+      console.error('[main] jar =', JAR_PATH, fs.existsSync(JAR_PATH) ? '(found)' : '(MISSING)');
+    }
     startBackend(JAR_PATH, 'list-profiles', [], send, undefined, javaCommand);
   });
 

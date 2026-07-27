@@ -1,7 +1,7 @@
 /**
  * @jest-environment jsdom
  */
-const { createStore } = require('../renderer/renderer');
+const { createStore, describeBackendExit } = require('../renderer/renderer');
 
 const PROFILES = [
   { id: 'fabric-1.21', mcVersion: '1.21.4', loader: 'fabric', mods: [] },
@@ -158,6 +158,37 @@ test('backend_exit with a non-zero code surfaces as a hero error', () => {
   store.apply({ type: 'backend_exit', code: 1 });
 
   expect(store.getState().hero.mode).toBe('error');
+});
+
+// A bare exit code tells nobody anything. The JVM already said what was wrong on stderr.
+test('a backend failure shows the cause, not just the exit code', () => {
+  const store = createStore();
+  store.apply({
+    type: 'backend_exit',
+    code: 1,
+    stderr: 'Error: LinkageError occurred\njava.lang.UnsupportedClassVersionError: bad version',
+  });
+
+  expect(store.getState().hero.message).toContain('UnsupportedClassVersionError');
+});
+
+// The single most likely way this launcher fails on a fresh machine: the PATH java is
+// old, and the raw JVM message does not tell the user what to do about it.
+test('a Java version mismatch says which environment variable to set', () => {
+  const message = describeBackendExit({
+    code: 1,
+    stderr: 'java.lang.UnsupportedClassVersionError: com/cubeclient/launcher/Main ...',
+  });
+
+  expect(message).toContain('CUBECLIENT_JAVA');
+  expect(message).toContain('Java 17');
+});
+
+test('a failure with no stderr still reports the exit code', () => {
+  const message = describeBackendExit({ code: 1 });
+
+  expect(message).toContain('1');
+  expect(message).not.toContain('undefined');
 });
 
 test('backend_exit with code 0 is not an error', () => {

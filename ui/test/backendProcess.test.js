@@ -14,6 +14,61 @@ function makeFakeProcess(stdoutLines) {
   return proc;
 }
 
+// A JVM that dies before reaching our code says why on stderr and writes nothing at all
+// to stdout. Discarding stderr left the UI reporting a bare exit code for a problem whose
+// cause was sitting right there — the wrong Java version, most often.
+function makeFailingProcess(stderrLines, code) {
+  const proc = new EventEmitter();
+  proc.stdout = new Readable({ read() {} });
+  proc.stderr = new Readable({ read() {} });
+  process.nextTick(() => {
+    proc.stdout.push(null);
+    for (const line of stderrLines) proc.stderr.push(line + '\n');
+    proc.stderr.push(null);
+    setImmediate(() => proc.emit('close', code));
+  });
+  return proc;
+}
+
+test('a failing backend carries its stderr so the cause is not lost', (done) => {
+  const fakeProcess = makeFailingProcess(
+    ['Error: LinkageError occurred', 'java.lang.UnsupportedClassVersionError: bad version'],
+    1
+  );
+
+  startBackend('/jar', 'list-profiles', [], (event) => {
+    if (event.type !== 'backend_exit') return;
+    expect(event.code).toBe(1);
+    expect(event.stderr).toContain('UnsupportedClassVersionError');
+    done();
+  }, () => fakeProcess);
+});
+
+test('a clean exit carries no stderr', (done) => {
+  const fakeProcess = makeFailingProcess(['some harmless JVM notice'], 0);
+
+  startBackend('/jar', 'list-profiles', [], (event) => {
+    if (event.type !== 'backend_exit') return;
+    expect(event.code).toBe(0);
+    expect(event.stderr).toBeUndefined();
+    done();
+  }, () => fakeProcess);
+});
+
+// A crashing JVM can emit thousands of stack-trace lines; the renderer only ever shows
+// the first, and holding the rest is pure memory growth.
+test('stderr capture is bounded', (done) => {
+  const many = Array.from({ length: 500 }, (_, i) => `line ${i}`);
+  const fakeProcess = makeFailingProcess(many, 1);
+
+  startBackend('/jar', 'list-profiles', [], (event) => {
+    if (event.type !== 'backend_exit') return;
+    expect(event.stderr.split('\n').length).toBeLessThanOrEqual(20);
+    expect(event.stderr).toContain('line 0');
+    done();
+  }, () => fakeProcess);
+});
+
 test('parses JSON lines from stdout and forwards them to onEvent', (done) => {
   const fakeProcess = makeFakeProcess([
     '{"type":"progress","stage":"manifest","percent":0}',
