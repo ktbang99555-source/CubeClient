@@ -23,6 +23,7 @@ public class LaunchCommand {
     private final JreProvisioner jreProvisioner;
     private final ProcessRunner processRunner;
     private final EventEmitter events;
+    private final ModDeployer modDeployer;
 
     public LaunchCommand(
         VersionManifestFetcher manifestFetcher,
@@ -32,7 +33,8 @@ public class LaunchCommand {
         LoaderInstaller loaderInstaller,
         JreProvisioner jreProvisioner,
         ProcessRunner processRunner,
-        EventEmitter events
+        EventEmitter events,
+        ModDeployer modDeployer
     ) {
         this.manifestFetcher = manifestFetcher;
         this.downloader = downloader;
@@ -42,6 +44,7 @@ public class LaunchCommand {
         this.jreProvisioner = jreProvisioner;
         this.processRunner = processRunner;
         this.events = events;
+        this.modDeployer = modDeployer;
     }
 
     /**
@@ -52,8 +55,8 @@ public class LaunchCommand {
      * <p>Downloads MUST land under the same {@code sharedRoot} that {@link JvmArgsBuilder} puts on
      * the classpath. Both take it as an explicit parameter so they cannot disagree.
      */
-    public int run(Profile profile, Path gameDir, Path sharedRoot, String osName, Session session)
-            throws IOException {
+    public int run(Profile profile, Path gameDir, Path sharedRoot, String osName, Session session,
+            Path modJarSource) throws IOException {
         events.progress("manifest", 0);
         var versions = manifestFetcher.fetchVersionList();
         VersionEntry entry = manifestFetcher.findVersion(versions, profile.mcVersion());
@@ -87,6 +90,13 @@ public class LaunchCommand {
         // 1.21.4 ended up being handed a Java 17 runtime and dying with UnsupportedClassVersionError.
         events.progress("loader", 85);
         var loader = loaderInstaller.install(profile.loader(), profile.mcVersion(), sharedRoot);
+
+        // Only Fabric profiles can load a mod at all, and only when the launcher told us where
+        // the mod jar is (it may not have been built yet in a dev checkout — that must not
+        // block launching vanilla or Fabric-without-the-modpack).
+        if (modJarSource != null && "fabric".equals(profile.loader())) {
+            modDeployer.deploy(modJarSource, gameDir);
+        }
 
         events.progress("runtime", 88);
         Path javaBin = jreProvisioner.ensureJre(

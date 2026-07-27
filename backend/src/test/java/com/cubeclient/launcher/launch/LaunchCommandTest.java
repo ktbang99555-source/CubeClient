@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LaunchCommandTest {
@@ -61,6 +62,22 @@ class LaunchCommandTest {
                         }
                       }
                     }
+                    """;
+            }
+            // Below: the Fabric loader's own metadata host, only ever reached by a "fabric"
+            // profile — see LoaderInstallerTest.FakeFetcher, which this mirrors, for why each
+            // of these three shapes is needed.
+            if (url.endsWith(".sha1")) {
+                return "ada2141c0cc52ee8f5c48cd5fa4ce0e794f22236";
+            }
+            if (url.contains("/profile/json")) {
+                return """
+                    { "mainClass": "net.fabricmc.loader.impl.launch.knot.KnotClient", "libraries": [] }
+                    """;
+            }
+            if (url.contains("meta.fabricmc.net")) {
+                return """
+                    [ { "loader": { "version": "0.19.3", "stable": true } } ]
                     """;
             }
             return """
@@ -160,13 +177,14 @@ class LaunchCommandTest {
         // The vanilla profile installs no loader; LoaderInstaller has its own tests.
         LoaderInstaller loaderInstaller = new LoaderInstaller(fetcher, downloader);
         LaunchCommand launchCommand = new LaunchCommand(manifestFetcher, downloader, assetDownloader,
-            new JvmArgsBuilder(), loaderInstaller, jreProvisioner, processRunner, events);
+            new JvmArgsBuilder(), loaderInstaller, jreProvisioner, processRunner, events,
+            new ModDeployer());
 
         Profile profile = new Profile("latest-1.21", "1.21.4", "vanilla", List.of());
         Path sharedRoot = tempDir;
         Path gameDir = sharedRoot.resolve("instances").resolve("latest-1.21");
         int exitCode = launchCommand.run(
-            profile, gameDir, sharedRoot, "windows", Session.offline(profile.id()));
+            profile, gameDir, sharedRoot, "windows", Session.offline(profile.id()), null);
 
         assertEquals(0, exitCode);
         assertTrue(processRunner.lastCommand.contains("net.minecraft.client.main.Main"));
@@ -205,5 +223,61 @@ class LaunchCommandTest {
         assertTrue(eventLog.contains("\"stage\":\"assets\""));
         assertTrue(eventLog.contains("\"type\":\"launched\""));
         assertTrue(eventLog.contains("\"type\":\"exited\""));
+    }
+
+    /**
+     * Builds a {@link LaunchCommand} wired the same way {@link #runDownloadsFilesBuildsCommandAndLaunchesProcess()}
+     * does, for the two mod-deployment tests below, which only care about the "fabric" +
+     * mod-jar branch and would otherwise duplicate this whole fixture twice over.
+     */
+    private LaunchCommand fabricLaunchCommand() {
+        FakeHttpFetcher fetcher = new FakeHttpFetcher();
+        VersionManifestFetcher manifestFetcher = new VersionManifestFetcher(fetcher);
+        NoVerifyDownloader downloader = new NoVerifyDownloader(fetcher);
+        FakeProcessRunner processRunner = new FakeProcessRunner();
+        EventEmitter events = new EventEmitter(new PrintStream(new ByteArrayOutputStream()));
+        AssetDownloader assetDownloader = new AssetDownloader(fetcher, downloader);
+        // Returns a path without touching the network; JreProvisioner has its own tests.
+        JreProvisioner jreProvisioner = new JreProvisioner(fetcher, downloader) {
+            @Override
+            public Path ensureJre(int majorVersion, Path runtimesDir, String os) {
+                return runtimesDir.resolve(String.valueOf(majorVersion)).resolve("bin/java");
+            }
+        };
+        LoaderInstaller loaderInstaller = new LoaderInstaller(fetcher, downloader);
+        return new LaunchCommand(manifestFetcher, downloader, assetDownloader,
+            new JvmArgsBuilder(), loaderInstaller, jreProvisioner, processRunner, events,
+            new ModDeployer());
+    }
+
+    // Only proves LaunchCommand calls ModDeployer when it should — ModDeployer's own copy/skip
+    // behaviour is ModDeployerTest's job, not this one's.
+    @Test
+    void deploysTheModJarForAFabricProfileWhenOneIsGiven() throws IOException {
+        Path modJar = tempDir.resolve("cubeclient-mod-0.1.0.jar");
+        Files.writeString(modJar, "jar-bytes");
+        LaunchCommand launchCommand = fabricLaunchCommand();
+        Profile profile = new Profile("fabric-test", "1.21.4", "fabric", List.of());
+        Path sharedRoot = tempDir;
+        Path gameDir = sharedRoot.resolve("instances").resolve(profile.id());
+
+        launchCommand.run(
+            profile, gameDir, sharedRoot, "windows", Session.offline(profile.id()), modJar);
+
+        assertTrue(Files.exists(gameDir.resolve("mods").resolve("cubeclient-mod-0.1.0.jar")));
+    }
+
+    @Test
+    void aNullModJarSourceLaunchesWithoutDeployingAnything() throws IOException {
+        LaunchCommand launchCommand = fabricLaunchCommand();
+        Profile profile = new Profile("fabric-test", "1.21.4", "fabric", List.of());
+        Path sharedRoot = tempDir;
+        Path gameDir = sharedRoot.resolve("instances").resolve(profile.id());
+
+        int exitCode = launchCommand.run(
+            profile, gameDir, sharedRoot, "windows", Session.offline(profile.id()), null);
+
+        assertEquals(0, exitCode);
+        assertFalse(Files.exists(gameDir.resolve("mods")));
     }
 }

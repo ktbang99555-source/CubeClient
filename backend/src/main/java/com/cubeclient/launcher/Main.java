@@ -89,6 +89,10 @@ public final class Main {
             return 1;
         }
         String profileId = args[1];
+        // Optional: the path to the built CubeClient mod jar, supplied by the launcher UI when
+        // it exists. Absent in a dev checkout where mod/ hasn't been built yet, or if a profile
+        // is launched some other way — either is fine, it just means no modpack this run.
+        Path modJarSource = args.length >= 3 ? Path.of(args[2]) : null;
         try {
             Path appData = appDataDir();
             ProfileStore profileStore = new ProfileStore(appData.resolve("profiles.json"));
@@ -110,12 +114,13 @@ public final class Main {
             var loaderInstaller = new com.cubeclient.launcher.loader.LoaderInstaller(fetcher, downloader);
             var jreProvisioner = new JreProvisioner(fetcher, downloader);
             var launchCommand = new LaunchCommand(manifestFetcher, downloader, assetDownloader,
-                argsBuilder, loaderInstaller, jreProvisioner, processRunner, events);
+                argsBuilder, loaderInstaller, jreProvisioner, processRunner, events,
+                new com.cubeclient.launcher.launch.ModDeployer());
 
             Path gameDir = appData.resolve("instances").resolve(profile.id());
 
             return launchCommand.run(
-                profile, gameDir, appData, adoptiumOsName(), readSession());
+                profile, gameDir, appData, adoptiumOsName(), readSession(), modJarSource);
         } catch (IOException e) {
             events.error("launch", e.getMessage());
             return 1;
