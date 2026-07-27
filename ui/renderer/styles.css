@@ -27,6 +27,10 @@ html, body {
   line-height: 1.5;
   overflow: hidden;
   user-select: none;
+  /* Browsers default to breaking CJK text between any two characters. Without this,
+     a two-syllable label like "세션" wraps mid-word under space pressure — a real
+     bug caught by manual verification, not a hypothetical. */
+  word-break: keep-all;
 }
 
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
