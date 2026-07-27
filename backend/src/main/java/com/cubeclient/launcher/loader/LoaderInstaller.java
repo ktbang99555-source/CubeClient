@@ -30,6 +30,22 @@ public class LoaderInstaller {
 
     private static final String FABRIC_META = "https://meta.fabricmc.net/v2";
 
+    // meta.fabricmc.net is Fabric's metadata API host, not its Maven host: every existing
+    // downloadLibrary call above gets its repository root from the "url" field inside Fabric's
+    // own profile JSON (see PROFILE's library entries in the test), and that field always points
+    // at maven.fabricmc.net, never at meta.fabricmc.net. Fabric API is published to that same
+    // Maven host, so this is used here rather than deriving a (wrong) root from FABRIC_META.
+    private static final String FABRIC_MAVEN = "https://maven.fabricmc.net/";
+
+    // Fabric API has no meta.fabricmc.net version-list endpoint the way the loader and Yarn
+    // mappings do, so this cannot be resolved dynamically the way newestLoaderVersion() resolves
+    // the loader version. Pinned to the same build the mod project itself compiles against
+    // (mod/gradle.properties' fabric_version) — the two must agree, since the mod is compiled
+    // against this jar and this is what puts it on the classpath at launch.
+    private static final String FABRIC_API_VERSION = "0.119.4+1.21.4";
+    private static final String FABRIC_API_COORDINATE =
+        "net.fabricmc.fabric-api:fabric-api:" + FABRIC_API_VERSION;
+
     /**
      * The result of installing a loader.
      *
@@ -115,6 +131,13 @@ public class LoaderInstaller {
                 superseded.add(moduleKey(relativePathFor(coordinate)));
             }
         }
+
+        // Fabric API is a separate distribution from the loader itself, published to the same
+        // Maven host, so it reuses downloadLibrary rather than introducing a second HTTP
+        // mechanism. Every Fabric profile needs it — CubeClient's own mod depends on the
+        // ScreenEvents and HudRenderCallback APIs it provides.
+        classpath.add(downloadLibrary(FABRIC_API_COORDINATE, FABRIC_MAVEN, sharedRoot));
+
         return new InstalledLoader(mainClass, classpath, superseded);
     }
 

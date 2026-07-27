@@ -156,7 +156,36 @@ class LoaderInstallerTest {
             installer(fetcher, downloader).install("fabric", "1.21.4", tempDir);
 
         assertEquals(downloader.destinations, result.extraClasspath());
-        assertEquals(2, result.extraClasspath().size());
+        // The 2 loader libraries from PROFILE plus Fabric API, which is downloaded separately.
+        assertEquals(3, result.extraClasspath().size());
+    }
+
+    // Fabric API is a separate distribution from Fabric Loader, but ScreenEvents and
+    // HudRenderCallback — everything the CubeClient mod needs to add a settings button and draw
+    // a HUD — live in Fabric API, not the loader. Every Fabric profile needs it, unconditionally.
+    @Test
+    void alsoInstallsFabricApiForEveryFabricProfile() throws IOException {
+        FakeFetcher fetcher = new FakeFetcher();
+        RecordingDownloader downloader = new RecordingDownloader(fetcher);
+
+        LoaderInstaller.InstalledLoader result =
+            installer(fetcher, downloader).install("fabric", "1.21.4", tempDir);
+
+        assertTrue(downloader.urls.stream().anyMatch(u -> u.contains("fabric-api")),
+            "actual: " + downloader.urls);
+        assertTrue(result.extraClasspath().stream()
+            .anyMatch(p -> p.toString().contains("fabric-api")),
+            "actual: " + result.extraClasspath());
+    }
+
+    @Test
+    void vanillaDoesNotInstallFabricApiEither() throws IOException {
+        FakeFetcher fetcher = new FakeFetcher();
+        RecordingDownloader downloader = new RecordingDownloader(fetcher);
+
+        installer(fetcher, downloader).install("vanilla", "1.21.4", tempDir);
+
+        assertTrue(downloader.urls.isEmpty());
     }
 
     // Fabric's profile JSON carries no digests, so they come from the Maven repo's own .sha1
