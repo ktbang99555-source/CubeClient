@@ -12,7 +12,8 @@ function renderStatusBar({ javaVersion, lastRun, offline }, container) {
   let lastRunWarns = false;
   if (lastRun) {
     lastRunWarns = lastRun.code !== 0;
-    lastRunText = lastRun.code === 0 ? '정상 종료' : `비정상 종료 (${lastRun.code})`;
+    const code = lastRun.code === undefined || lastRun.code === null ? '알 수 없음' : lastRun.code;
+    lastRunText = lastRun.code === 0 ? '정상 종료' : `비정상 종료 (${code})`;
   }
   container.append(chip('마지막 실행', lastRunText, lastRunWarns));
 
@@ -28,6 +29,7 @@ function renderStatusBar({ javaVersion, lastRun, offline }, container) {
   const openLog = document.createElement('button');
   openLog.dataset.action = 'open-log';
   openLog.textContent = '열기';
+  openLog.setAttribute('aria-label', '로그 열기');
   logChip.append(key, openLog);
   container.append(logChip);
 }

@@ -33,6 +33,26 @@ test('a clean exit reads as normal, a non-zero exit is marked as a warning', () 
   expect(warned.textContent).toContain('1');
 });
 
+// A malformed exit event must not surface as the word "undefined" in the UI.
+// Its sibling components already hold this line; this one should too.
+test('an exit with no code reads as unknown rather than undefined', () => {
+  renderStatusBar({ javaVersion: 21, lastRun: {}, offline: false }, container);
+
+  expect(container.textContent).not.toContain('undefined');
+  expect(container.textContent).toContain('비정상 종료 (알 수 없음)');
+});
+
+// Without this, a regression that dropped replaceChildren() would leave the previous
+// render's chips in place and every other assertion here would still pass.
+test('each render replaces the previous chips rather than stacking', () => {
+  renderStatusBar({ javaVersion: 21, lastRun: { code: 1 }, offline: true }, container);
+  const firstCount = container.querySelectorAll('.chip').length;
+
+  renderStatusBar({ javaVersion: 21, lastRun: { code: 1 }, offline: true }, container);
+
+  expect(container.querySelectorAll('.chip').length).toBe(firstCount);
+});
+
 // An offline session starts the game but every server rejects it. Saying so up front
 // is cheaper than the user discovering it at a connect screen.
 test('an offline session is called out', () => {
