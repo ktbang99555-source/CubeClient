@@ -264,6 +264,12 @@ if (typeof window !== 'undefined' && window.cubeclient) {
   api.onBackendEvent((event) => {
     store.apply(event);
     draw();
+    // Mirrored into the main process's debug log when CUBECLIENT_DEBUG is set. Without
+    // it, "the window shows nothing" and "the window never got the event" look identical
+    // from outside.
+    const s = store.getState();
+    console.log(`[state] after ${event.type}: versions=${s.profiles.length}`
+      + ` selected=${s.selectedId} hero=${s.hero.mode}`);
   });
 
   draw();

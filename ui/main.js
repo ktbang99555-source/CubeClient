@@ -38,18 +38,37 @@ function createWindow() {
     },
   });
 
-  // Set CUBECLIENT_DEBUG=1 to mirror the renderer's console and the backend's event
-  // stream into this terminal. The renderer is a separate process, so without this its
-  // errors are invisible unless DevTools happens to be open — which made a "nothing
-  // happens" report impossible to diagnose remotely.
+  // Set CUBECLIENT_DEBUG=1 to record the renderer's console and the backend's event
+  // stream. The renderer is a separate process, so without this its errors are invisible
+  // unless DevTools happens to be open — which made a "nothing happens" report
+  // impossible to diagnose. It goes to a file as well as the terminal because a terminal
+  // scrollback cannot be attached to a bug report.
   const debug = Boolean(process.env.CUBECLIENT_DEBUG);
+  const trace = (...parts) => {
+    if (!debug) return;
+    // Nothing here should ever carry a credential — only event types and JVM output —
+    // but this writes to disk, and a token has leaked into a log file on this project
+    // before. Redact anything shaped like a JWT rather than trusting that.
+    const line = `[${new Date().toISOString()}] ${parts.join(' ')}`
+      .replace(/eyJ[A-Za-z0-9_.-]{20,}/g, '<redacted-token>');
+    console.error(line);
+    try {
+      fs.mkdirSync(appDataDir(), { recursive: true });
+      fs.appendFileSync(path.join(appDataDir(), 'debug.log'), line + '\n');
+    } catch (err) {
+      // Diagnostics must never be the reason the launcher fails to start.
+    }
+  };
+
   if (debug) {
-    win.webContents.on('console-message', (_e, _level, message) => {
-      console.error('[renderer]', message);
-    });
-    win.webContents.on('preload-error', (_e, preloadPath, error) => {
-      console.error('[preload-error]', preloadPath, error && error.message);
-    });
+    trace('[main] --- session start ---');
+    win.webContents.on('console-message', (_e, _level, message) => trace('[renderer]', message));
+    win.webContents.on('preload-error', (_e, preloadPath, error) =>
+      trace('[preload-error]', preloadPath, error && error.message));
+    win.webContents.on('render-process-gone', (_e, details) =>
+      trace('[render-process-gone]', JSON.stringify(details)));
+    win.webContents.on('did-fail-load', (_e, code, desc, url) =>
+      trace('[did-fail-load]', code, desc, url));
   }
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
@@ -59,10 +78,11 @@ function createWindow() {
   // Every backend event passes through sanitizeForRenderer, which withholds the access token.
   // The renderer must never receive a credential.
   const send = (event) => {
-    // Only the type: the auth_result event carries a token, and this goes to a terminal.
-    if (debug) console.error('[backend event]', event.type);
+    // Only the type: the auth_result event carries a token.
+    trace('[backend event]', event.type);
     // The exception: an unparseable line is only useful if you can see it.
-    if (debug && event.type === 'backend_noise') console.error('[backend noise]', event.line);
+    if (event.type === 'backend_noise') trace('[backend noise]', event.line);
+    if (event.type === 'backend_exit' && event.stderr) trace('[backend stderr]', event.stderr);
 
     if (event.type === 'auth_result') {
       try {
@@ -93,10 +113,8 @@ function createWindow() {
   // Wait for the page to be ready, or the first events are sent into a renderer that has no
   // listener yet and the profile list silently never appears.
   win.webContents.once('did-finish-load', () => {
-    if (debug) {
-      console.error('[main] page loaded; java =', javaCommand);
-      console.error('[main] jar =', JAR_PATH, fs.existsSync(JAR_PATH) ? '(found)' : '(MISSING)');
-    }
+    trace('[main] page loaded; java =', javaCommand);
+    trace('[main] jar =', JAR_PATH, fs.existsSync(JAR_PATH) ? '(found)' : '(MISSING)');
     startBackend(JAR_PATH, 'list-profiles', [], send, undefined, javaCommand);
   });
 
