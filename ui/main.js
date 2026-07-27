@@ -80,6 +80,12 @@ function createWindow() {
   const send = (event) => {
     // Only the type: the auth_result event carries a token.
     trace('[backend event]', event.type);
+    // The count, not the contents: it splits "the backend found nothing" from "the list
+    // was lost on its way to the window", which look identical from the UI.
+    if (event.type === 'profiles') {
+      trace('[main] profiles count =',
+        Array.isArray(event.profiles) ? event.profiles.length : `not-an-array (${typeof event.profiles})`);
+    }
     // The exception: an unparseable line is only useful if you can see it.
     if (event.type === 'backend_noise') trace('[backend noise]', event.line);
     if (event.type === 'backend_exit' && event.stderr) trace('[backend stderr]', event.stderr);
@@ -115,6 +121,12 @@ function createWindow() {
   win.webContents.once('did-finish-load', () => {
     trace('[main] page loaded; java =', javaCommand);
     trace('[main] jar =', JAR_PATH, fs.existsSync(JAR_PATH) ? '(found)' : '(MISSING)');
+    // The backend resolves this same directory from its own APPDATA, so if the two
+    // processes disagree about where it is, the launcher reads an empty profile list
+    // from a directory nobody edited.
+    const profilesPath = path.join(appDataDir(), 'profiles.json');
+    trace('[main] profiles file =', profilesPath,
+      fs.existsSync(profilesPath) ? `(${fs.statSync(profilesPath).size} bytes)` : '(MISSING)');
     startBackend(JAR_PATH, 'list-profiles', [], send, undefined, javaCommand);
   });
 
