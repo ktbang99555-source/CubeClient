@@ -26,6 +26,11 @@ import java.util.Set;
  * button, which this screen doesn't have) must not lose a toggle the player already made.
  */
 public class ModListScreen extends Screen {
+    private static final int MARGIN = 12;
+    private static final int TAB_HEIGHT = 20;
+    /** Below the title, the tab row, and the search row. */
+    private static final int GRID_TOP = 80;
+
     private final Screen parent;
     private final FeatureRegistry registry;
     private final ConfigStore configStore;
@@ -58,8 +63,22 @@ public class ModListScreen extends Screen {
     protected void init() {
         this.config = loadConfigOrEmpty();
 
+        // Tabs get a row to themselves and the search box gets the next one. Sharing one row put
+        // the last tab straight on top of the search field: Minecraft never scales a GUI below
+        // 320 units wide, and five readable tabs plus a usable text box do not fit in 320.
         int tabY = 24;
-        int tabX = 12;
+        int tabCount = Category.values().length + 1; // the categories, plus 전부
+        int tabGap = 4;
+        int tabWidth = Math.min(70, (width - 2 * MARGIN - tabGap * (tabCount - 1)) / tabCount);
+        int tabX = MARGIN;
+
+        // 전부 leads: it is the state the screen opens in, so it reads as the leftmost tab.
+        addDrawableChild(ButtonWidget.builder(Text.literal("전부"), b -> {
+            this.activeCategory = null;
+            rebuildQueued = true;
+        }).dimensions(tabX, tabY, tabWidth, TAB_HEIGHT).build());
+        tabX += tabWidth + tabGap;
+
         for (Category category : Category.values()) {
             Category thisCategory = category;
             // Queued rather than immediate: every one of these fires from inside Minecraft's
@@ -67,15 +86,16 @@ public class ModListScreen extends Screen {
             addDrawableChild(ButtonWidget.builder(Text.literal(category.displayName()), b -> {
                 this.activeCategory = thisCategory;
                 rebuildQueued = true;
-            }).dimensions(tabX, tabY, 70, 20).build());
-            tabX += 74;
+            }).dimensions(tabX, tabY, tabWidth, TAB_HEIGHT).build());
+            tabX += tabWidth + tabGap;
         }
-        addDrawableChild(ButtonWidget.builder(Text.literal("전부"), b -> {
-            this.activeCategory = null;
-            rebuildQueued = true;
-        }).dimensions(tabX, tabY, 70, 20).build());
 
-        searchField = new TextFieldWidget(textRenderer, width - 160, tabY, 148, 20, Text.literal("모드 검색"));
+        searchField = new TextFieldWidget(
+            textRenderer, MARGIN, tabY + TAB_HEIGHT + 4, width - 2 * MARGIN, 20,
+            Text.literal("모드 검색"));
+        // TextFieldWidget's message is narration only; this is what actually shows in the empty
+        // box, which otherwise gives no hint that it can be typed into.
+        searchField.setPlaceholder(Text.literal("모드 검색"));
         searchField.setChangedListener(text -> {
             this.searchText = text;
             rebuildQueued = true;
@@ -101,12 +121,14 @@ public class ModListScreen extends Screen {
 
         List<Feature> visible = registry.list(activeCategory, searchText, config.favorites());
 
-        int columns = 4;
         int cardWidth = 140;
         int cardHeight = 90;
         int gap = 12;
-        int startX = 12;
-        int startY = 56;
+        // Four columns only when four fit. A fixed count sent cards off the right edge on a
+        // narrow window, and Minecraft scales GUIs down to 320 units wide.
+        int columns = Math.max(1, (width - 2 * MARGIN + gap) / (cardWidth + gap));
+        int startX = MARGIN;
+        int startY = GRID_TOP;
 
         for (int i = 0; i < visible.size(); i++) {
             Feature feature = visible.get(i);

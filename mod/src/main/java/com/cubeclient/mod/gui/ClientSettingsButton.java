@@ -9,6 +9,7 @@ import net.minecraft.client.gui.screen.GameMenuScreen;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.TitleScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.text.Text;
 
 /**
@@ -30,31 +31,43 @@ import net.minecraft.text.Text;
 public final class ClientSettingsButton {
     private ClientSettingsButton() {}
 
-    // Starting guesses, not a verified layout — see the class-level note about Task 12's manual
-    // pass. Kept as named constants specifically so they're easy to retune without hunting
-    // through the lambda bodies below.
     private static final int BUTTON_WIDTH = 200;
     private static final int BUTTON_HEIGHT = 20;
-    private static final int TITLE_SCREEN_BOTTOM_MARGIN = 28;
-    private static final int PAUSE_SCREEN_X_OFFSET = -(BUTTON_WIDTH / 2);
-    private static final int PAUSE_SCREEN_Y_OFFSET = 100;
+    private static final int ROW_GAP = 4;
+    private static final int BOTTOM_MARGIN = 8;
 
     public static void register(FeatureRegistry registry, ConfigStore configStore) {
         ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
-            if (screen instanceof TitleScreen) {
+            if (screen instanceof TitleScreen || screen instanceof GameMenuScreen) {
                 addButton(
                     screen,
                     scaledWidth / 2 - BUTTON_WIDTH / 2,
-                    scaledHeight - TITLE_SCREEN_BOTTOM_MARGIN,
-                    registry, configStore);
-            } else if (screen instanceof GameMenuScreen) {
-                addButton(
-                    screen,
-                    scaledWidth / 2 + PAUSE_SCREEN_X_OFFSET,
-                    scaledHeight / 4 + PAUSE_SCREEN_Y_OFFSET,
+                    rowBelowExistingButtons(screen, scaledHeight),
                     registry, configStore);
             }
         });
+    }
+
+    /**
+     * The y for a new row under whatever vanilla already drew.
+     *
+     * <p>The pause menu's own buttons were previously cleared by a fixed {@code height / 4 + 100}
+     * offset, which landed directly on top of vanilla's bottom button — two labels rendered into
+     * one box, unreadable. Vanilla's layouts move between Minecraft versions, so measuring what is
+     * actually on the screen is the only offset that keeps working.
+     *
+     * <p>Falls back to sitting just above the bottom edge when there is no room left below the
+     * existing rows, which is better than being drawn off-screen entirely.
+     */
+    private static int rowBelowExistingButtons(Screen screen, int scaledHeight) {
+        int lowestBottom = 0;
+        for (ClickableWidget widget : Screens.getButtons(screen)) {
+            lowestBottom = Math.max(lowestBottom, widget.getY() + widget.getHeight());
+        }
+
+        int proposed = lowestBottom + ROW_GAP;
+        int highestAllowed = scaledHeight - BUTTON_HEIGHT - BOTTOM_MARGIN;
+        return Math.min(proposed, highestAllowed);
     }
 
     private static void addButton(Screen screen, int x, int y,
