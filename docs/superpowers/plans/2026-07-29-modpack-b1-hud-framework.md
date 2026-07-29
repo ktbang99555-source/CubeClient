@@ -384,6 +384,7 @@ git commit -m "Add per-feature HUD positions to ModConfig, preserving them acros
 
 **Files:**
 - Create: `mod/src/main/java/com/cubeclient/mod/registry/PositionedHudFeature.java`
+- Create: `mod/src/main/java/com/cubeclient/mod/gui/HudRenderUtil.java`
 - Create: `mod/src/main/java/com/cubeclient/mod/config/CachedConfig.java`
 - Create: `mod/src/test/java/com/cubeclient/mod/config/CachedConfigTest.java`
 - Modify: `mod/src/main/java/com/cubeclient/mod/features/FpsDisplay.java`
@@ -391,7 +392,7 @@ git commit -m "Add per-feature HUD positions to ModConfig, preserving them acros
 
 **Interfaces:**
 - Consumes: `HudPosition`(Task 1), `ModConfig`/`ConfigStore`(Task 2, 기존).
-- Produces: `PositionedHudFeature extends Feature` — `HudPosition defaultPosition()`, `void render(DrawContext context, HudPosition resolvedPosition)`. `CachedConfig` — `ModConfig current()`, `void save(ModConfig)`(disk에 쓰고 캐시도 갱신). Task 4/5/6이 `PositionedHudFeature`를 구현하고, Task 8/9가 `CachedConfig`를 읽고 쓴다.
+- Produces: `PositionedHudFeature extends Feature` — `HudPosition defaultPosition()`, `void render(DrawContext context, HudPosition resolvedPosition)`. `HudRenderUtil.drawScaledText(DrawContext, HudPosition, HudRenderUtil.TextDrawer)` — Task 4/5/6이 각자의 `render()`에서 이 헬퍼를 호출해 push/scale/pop 보일러플레이트를 반복하지 않는다. `CachedConfig` — `ModConfig current()`, `void save(ModConfig)`(disk에 쓰고 캐시도 갱신). Task 4/5/6이 `PositionedHudFeature`와 `HudRenderUtil`을 쓰고, Task 8/9가 `CachedConfig`를 읽고 쓴다.
 
 이 태스크가 이 계획에서 제일 크다 — 쪼개면 중간 상태가 컴파일이 안 되거나(레이어 전환 절반만 된 상태) 테스트가 애매해져서 하나로 묶는다.
 
@@ -493,7 +494,44 @@ public interface PositionedHudFeature extends Feature {
 }
 ```
 
-- [ ] **Step 4: `CachedConfig` 최소 구현**
+- [ ] **Step 4: `HudRenderUtil` 작성 — push/scale/pop 보일러플레이트를 한 곳에 모음**
+
+`FpsDisplay`(이 태스크)와 `SpeedDisplay`/`CpsDisplay`/`PerformanceDisplay`(Task 4~6)가 전부 "비율 좌표를 스케일된 픽셀로 바꾸고, 행렬을 push/scale/pop으로 감싸고, 그 안에서 텍스트 하나를 그린다"는 동일한 절차를 반복한다. 네 파일에 그대로 복제하면 리뷰에서 중복으로 지적받으므로 미리 뽑아둔다 — 각 기능의 `render()`에는 실제로 다른 부분(텍스트 내용)만 남는다.
+
+```java
+package com.cubeclient.mod.gui;
+
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
+
+/**
+ * PositionedHudFeature 구현체가 공유하는 렌더링 절차: 비율 좌표를 화면 배율 기준 픽셀로
+ * 바꾸고, 행렬 스택을 push/scale/pop으로 감싸 배율을 적용한 뒤, 그 안에서 실제 텍스트를
+ * 그린다. 이 세 단계가 FpsDisplay/SpeedDisplay/CpsDisplay/PerformanceDisplay에서 전부
+ * 그대로 반복되므로, 각 기능은 텍스트 내용만 다른 이 헬퍼를 호출한다.
+ */
+public final class HudRenderUtil {
+    private HudRenderUtil() {}
+
+    public static void drawScaledText(DrawContext context, HudPosition pos, TextDrawer drawer) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        int x = (int) (pos.xRatio() * client.getWindow().getScaledWidth());
+        int y = (int) (pos.yRatio() * client.getWindow().getScaledHeight());
+        float scale = (float) pos.scale();
+        context.getMatrices().push();
+        context.getMatrices().scale(scale, scale, 1.0f);
+        drawer.draw(context, (int) (x / scale), (int) (y / scale));
+        context.getMatrices().pop();
+    }
+
+    @FunctionalInterface
+    public interface TextDrawer {
+        void draw(DrawContext context, int x, int y);
+    }
+}
+```
+
+- [ ] **Step 5: `CachedConfig` 최소 구현**
 
 ```java
 package com.cubeclient.mod.config;
@@ -534,7 +572,7 @@ public class CachedConfig {
 }
 ```
 
-- [ ] **Step 5: `CachedConfig` 테스트 통과 확인**
+- [ ] **Step 6: `CachedConfig` 테스트 통과 확인**
 
 Run:
 ```bash
@@ -542,7 +580,7 @@ JAVA_HOME="C:/Users/Skdji/devtools/jdk21/jdk-21.0.11+10" ./gradlew.bat test --te
 ```
 Expected: PASS, 4개 테스트 전부.
 
-- [ ] **Step 6: `FpsDisplay`를 `PositionedHudFeature`로 마이그레이션**
+- [ ] **Step 7: `FpsDisplay`를 `PositionedHudFeature`로 마이그레이션**
 
 `mod/src/main/java/com/cubeclient/mod/features/FpsDisplay.java` 전체를 다음으로 교체:
 
@@ -550,6 +588,7 @@ Expected: PASS, 4개 테스트 전부.
 package com.cubeclient.mod.features;
 
 import com.cubeclient.mod.gui.HudPosition;
+import com.cubeclient.mod.gui.HudRenderUtil;
 import com.cubeclient.mod.gui.Theme;
 import com.cubeclient.mod.registry.Category;
 import com.cubeclient.mod.registry.PositionedHudFeature;
@@ -580,22 +619,16 @@ public class FpsDisplay implements PositionedHudFeature {
     @Override
     public void render(DrawContext context, HudPosition pos) {
         MinecraftClient client = MinecraftClient.getInstance();
-        int x = (int) (pos.xRatio() * client.getWindow().getScaledWidth());
-        int y = (int) (pos.yRatio() * client.getWindow().getScaledHeight());
-        float scale = (float) pos.scale();
-        context.getMatrices().push();
-        context.getMatrices().scale(scale, scale, 1.0f);
         String text = client.getCurrentFps() + " FPS";
-        context.drawTextWithShadow(client.textRenderer,
-            text, (int) (x / scale), (int) (y / scale), Theme.TEXT);
-        context.getMatrices().pop();
+        HudRenderUtil.drawScaledText(context, pos, (ctx, x, y) ->
+            ctx.drawTextWithShadow(client.textRenderer, text, x, y, Theme.TEXT));
     }
 }
 ```
 
-**검증됨:** `DrawContext.getMatrices()` → `MatrixStack`, 메서드는 `push()`/`scale(float, float, float)`/`pop()`(2개 인자 아님, z축까지 3개) — 스크래치 클래스로 실제 컴파일까지 통과시켜 확인함(추측 아님).
+**검증됨:** `DrawContext.getMatrices()` → `MatrixStack`, 메서드는 `push()`/`scale(float, float, float)`/`pop()`(2개 인자 아님, z축까지 3개) — 스크래치 클래스로 실제 컴파일까지 통과시켜 확인함(추측 아님). `HudRenderUtil.drawScaledText`는 Step 4에서 만든 헬퍼가 내부적으로 이 세 호출을 그대로 감싼다.
 
-- [ ] **Step 7: 컴파일 확인**
+- [ ] **Step 8: 컴파일 확인**
 
 Run:
 ```bash
@@ -603,7 +636,7 @@ cd mod && JAVA_HOME="C:/Users/Skdji/devtools/jdk21/jdk-21.0.11+10" ./gradlew.bat
 ```
 Expected: BUILD SUCCESSFUL.
 
-- [ ] **Step 8: `CubeClientModClient`를 새 레이어 시스템으로 전환**
+- [ ] **Step 9: `CubeClientModClient`를 새 레이어 시스템으로 전환**
 
 `mod/src/main/java/com/cubeclient/mod/CubeClientModClient.java` 전체를 다음으로 교체:
 
@@ -660,9 +693,9 @@ public class CubeClientModClient implements ClientModInitializer {
 }
 ```
 
-**참고:** `ClientSettingsButton.register`의 두 번째 인자 타입이 지금은 `ConfigStore`다. Task 8에서 `CachedConfig`를 쓰도록 `ClientSettingsButton`과 `ModListScreen`도 같이 고친다 — 지금 이 Step에서는 컴파일이 깨져도 된다(다음 Step에서 `ClientSettingsButton`을 최소한으로 고쳐 우선 컴파일만 통과시킨다).
+**참고:** `ClientSettingsButton.register`의 두 번째 인자 타입이 아직은 (B0 시절의) `ConfigStore`다. 바로 다음 Step에서 `ClientSettingsButton`과 `ModListScreen`도 `CachedConfig`를 받도록 같이 고친다 — 지금 이 Step만 반영한 상태로는 컴파일이 깨져도 된다.
 
-- [ ] **Step 9: `ClientSettingsButton`이 `CachedConfig`를 받도록 최소 수정**
+- [ ] **Step 10: `ClientSettingsButton`이 `CachedConfig`를 받도록 최소 수정**
 
 `mod/src/main/java/com/cubeclient/mod/gui/ClientSettingsButton.java`에서 `ConfigStore configStore` 파라미터를 쓰는 두 곳(`register` 메서드 시그니처, `addButton` 메서드 시그니처와 그 안의 `new ModListScreen(screen, registry, configStore)` 호출)을 `CachedConfig cachedConfig`로 바꾸고, import를 `com.cubeclient.mod.config.ConfigStore` → `com.cubeclient.mod.config.CachedConfig`로 바꾼다. `ModListScreen`의 생성자 시그니처도 Task 8에서 `CachedConfig`를 받도록 바뀔 예정이므로, 지금은 `ModListScreen` 쪽에서 컴파일 에러가 나는 게 정상이다 — 다음 Step에서 고친다.
 
@@ -702,7 +735,7 @@ public class CubeClientModClient implements ClientModInitializer {
 
 import에서 `com.cubeclient.mod.config.ConfigStore`를 지우고 `com.cubeclient.mod.config.CachedConfig`를 추가한다. `close()` 안의 `client.setScreen(parent)`는 그대로 둔다.
 
-- [ ] **Step 10: 전체 컴파일 및 테스트 통과 확인**
+- [ ] **Step 11: 전체 컴파일 및 테스트 통과 확인**
 
 Run:
 ```bash
@@ -710,10 +743,10 @@ cd mod && JAVA_HOME="C:/Users/Skdji/devtools/jdk21/jdk-21.0.11+10" ./gradlew.bat
 ```
 Expected: BUILD SUCCESSFUL, 이전까지의 모든 테스트(HudPositionTest, CachedConfigTest, ConfigStoreTest, FeatureRegistryTest) 통과.
 
-- [ ] **Step 11: 커밋**
+- [ ] **Step 12: 커밋**
 
 ```bash
-git add mod/src/main/java/com/cubeclient/mod/registry/PositionedHudFeature.java mod/src/main/java/com/cubeclient/mod/config/CachedConfig.java mod/src/test/java/com/cubeclient/mod/config/CachedConfigTest.java mod/src/main/java/com/cubeclient/mod/features/FpsDisplay.java mod/src/main/java/com/cubeclient/mod/CubeClientModClient.java mod/src/main/java/com/cubeclient/mod/gui/ClientSettingsButton.java mod/src/main/java/com/cubeclient/mod/gui/ModListScreen.java
+git add mod/src/main/java/com/cubeclient/mod/registry/PositionedHudFeature.java mod/src/main/java/com/cubeclient/mod/gui/HudRenderUtil.java mod/src/main/java/com/cubeclient/mod/config/CachedConfig.java mod/src/test/java/com/cubeclient/mod/config/CachedConfigTest.java mod/src/main/java/com/cubeclient/mod/features/FpsDisplay.java mod/src/main/java/com/cubeclient/mod/CubeClientModClient.java mod/src/main/java/com/cubeclient/mod/gui/ClientSettingsButton.java mod/src/main/java/com/cubeclient/mod/gui/ModListScreen.java
 git commit -m "Move HUD rendering off deprecated HudRenderCallback onto HudLayerRegistrationCallback"
 ```
 
@@ -727,7 +760,7 @@ git commit -m "Move HUD rendering off deprecated HudRenderCallback onto HudLayer
 - Modify: `mod/src/main/java/com/cubeclient/mod/CubeClientModClient.java`
 
 **Interfaces:**
-- Consumes: `PositionedHudFeature`(Task 3), `HudPosition`(Task 1).
+- Consumes: `PositionedHudFeature`(Task 3), `HudPosition`(Task 1), `HudRenderUtil.drawScaledText`(Task 3).
 - Produces: `SpeedDisplay` — 순수 계산 부분(`static double horizontalSpeed(double dx, double dz, double deltaSeconds)`)은 Minecraft 클래스 없이 유닛 테스트 가능하게 `public static`으로 노출한다. 이후 태스크가 참조하지 않음(B1의 마지막 HUD 기능이 아니라 그냥 독립적인 기능 중 하나).
 
 **참고:** 실제 좌표 추적(`ClientTickEvents.END_CLIENT_TICK`, `MinecraftClient.player.getX()`)은 유닛 테스트가 닿지 않는 영역이라 이 태스크 내에서 순수 계산 함수와 그 함수를 호출하는 얇은 틱 리스너로 나눈다 — 계산 로직만 테스트한다.
@@ -788,6 +821,7 @@ Expected: FAIL — `SpeedDisplay` 없음.
 package com.cubeclient.mod.features;
 
 import com.cubeclient.mod.gui.HudPosition;
+import com.cubeclient.mod.gui.HudRenderUtil;
 import com.cubeclient.mod.gui.Theme;
 import com.cubeclient.mod.registry.Category;
 import com.cubeclient.mod.registry.PositionedHudFeature;
@@ -852,14 +886,9 @@ public class SpeedDisplay implements PositionedHudFeature {
     @Override
     public void render(DrawContext context, HudPosition pos) {
         MinecraftClient client = MinecraftClient.getInstance();
-        int x = (int) (pos.xRatio() * client.getWindow().getScaledWidth());
-        int y = (int) (pos.yRatio() * client.getWindow().getScaledHeight());
-        float scale = (float) pos.scale();
-        context.getMatrices().push();
-        context.getMatrices().scale(scale, scale, 1.0f);
         String text = String.format("%.1f m/s", currentSpeed);
-        context.drawTextWithShadow(client.textRenderer, text, (int) (x / scale), (int) (y / scale), Theme.TEXT);
-        context.getMatrices().pop();
+        HudRenderUtil.drawScaledText(context, pos, (ctx, x, y) ->
+            ctx.drawTextWithShadow(client.textRenderer, text, x, y, Theme.TEXT));
     }
 }
 ```
@@ -899,7 +928,7 @@ git commit -m "Add SpeedDisplay: horizontal m/s tracked per tick"
 - Modify: `mod/src/main/java/com/cubeclient/mod/CubeClientModClient.java`
 
 **Interfaces:**
-- Consumes: `PositionedHudFeature`(Task 3).
+- Consumes: `PositionedHudFeature`(Task 3), `HudRenderUtil.drawScaledText`(Task 3).
 - Produces: `CpsDisplay` — 클릭 기록·집계 로직은 `java.util.function.LongSupplier clockMillis`를 생성자에 주입받는 형태로 분리해 실제 1초를 기다리지 않고 테스트한다.
 
 - [ ] **Step 1: 실패하는 테스트 작성**
@@ -977,6 +1006,7 @@ Expected: FAIL — `CpsDisplay` 없음.
 package com.cubeclient.mod.features;
 
 import com.cubeclient.mod.gui.HudPosition;
+import com.cubeclient.mod.gui.HudRenderUtil;
 import com.cubeclient.mod.gui.Theme;
 import com.cubeclient.mod.registry.Category;
 import com.cubeclient.mod.registry.PositionedHudFeature;
@@ -1045,13 +1075,9 @@ public class CpsDisplay implements PositionedHudFeature {
     @Override
     public void render(DrawContext context, HudPosition pos) {
         MinecraftClient client = MinecraftClient.getInstance();
-        int x = (int) (pos.xRatio() * client.getWindow().getScaledWidth());
-        int y = (int) (pos.yRatio() * client.getWindow().getScaledHeight());
-        float scale = (float) pos.scale();
-        context.getMatrices().push();
-        context.getMatrices().scale(scale, scale, 1.0f);
-        context.drawTextWithShadow(client.textRenderer, currentCps() + " CPS", (int) (x / scale), (int) (y / scale), Theme.TEXT);
-        context.getMatrices().pop();
+        String text = currentCps() + " CPS";
+        HudRenderUtil.drawScaledText(context, pos, (ctx, x, y) ->
+            ctx.drawTextWithShadow(client.textRenderer, text, x, y, Theme.TEXT));
     }
 }
 ```
@@ -1093,7 +1119,7 @@ git commit -m "Add CpsDisplay: 1-second rolling window, draining KeyBinding's pr
 - Modify: `mod/src/main/java/com/cubeclient/mod/CubeClientModClient.java`
 
 **Interfaces:**
-- Consumes: `PositionedHudFeature`(Task 3).
+- Consumes: `PositionedHudFeature`(Task 3), `HudRenderUtil.drawScaledText`(Task 3).
 - Produces: `PerformanceDisplay` — 텍스트 포맷팅 로직(`static String formatLine(double cpuLoad, long usedMemoryBytes)`)을 `public static`으로 노출해 `OperatingSystemMXBean` 없이 테스트한다.
 
 - [ ] **Step 1: 실패하는 테스트 작성**
@@ -1146,6 +1172,7 @@ Expected: FAIL — `PerformanceDisplay` 없음.
 package com.cubeclient.mod.features;
 
 import com.cubeclient.mod.gui.HudPosition;
+import com.cubeclient.mod.gui.HudRenderUtil;
 import com.cubeclient.mod.gui.Theme;
 import com.cubeclient.mod.registry.Category;
 import com.cubeclient.mod.registry.PositionedHudFeature;
@@ -1182,15 +1209,11 @@ public class PerformanceDisplay implements PositionedHudFeature {
     @Override
     public void render(DrawContext context, HudPosition pos) {
         MinecraftClient client = MinecraftClient.getInstance();
-        int x = (int) (pos.xRatio() * client.getWindow().getScaledWidth());
-        int y = (int) (pos.yRatio() * client.getWindow().getScaledHeight());
-        float scale = (float) pos.scale();
         double cpuLoad = osBean.getProcessCpuLoad();
         long usedMemory = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
-        context.getMatrices().push();
-        context.getMatrices().scale(scale, scale, 1.0f);
-        context.drawTextWithShadow(client.textRenderer, formatLine(cpuLoad, usedMemory), (int) (x / scale), (int) (y / scale), Theme.TEXT);
-        context.getMatrices().pop();
+        String text = formatLine(cpuLoad, usedMemory);
+        HudRenderUtil.drawScaledText(context, pos, (ctx, x, y) ->
+            ctx.drawTextWithShadow(client.textRenderer, text, x, y, Theme.TEXT));
     }
 
     /** CPU는 0.0~1.0(getProcessCpuLoad 그대로) 또는 측정 전이면 음수, 메모리는 바이트. */
