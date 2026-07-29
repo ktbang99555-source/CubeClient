@@ -1,5 +1,6 @@
 package com.cubeclient.mod.config;
 
+import com.cubeclient.mod.gui.HudPosition;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -34,7 +35,7 @@ class ConfigStoreTest {
     void savedConfigRoundTripsThroughLoad() throws IOException {
         Path file = tempDir.resolve("mod-config.json");
         ConfigStore store = new ConfigStore(file);
-        ModConfig original = new ModConfig(Map.of("fps", true), Set.of("fps"));
+        ModConfig original = new ModConfig(Map.of("fps", true), Set.of("fps"), Map.of());
 
         store.save(original);
         ModConfig loaded = store.load();
@@ -136,7 +137,7 @@ class ConfigStoreTest {
         Path file = tempDir.resolve("nested").resolve("mod-config.json");
         ConfigStore store = new ConfigStore(file);
 
-        store.save(new ModConfig(Map.of(), Set.of()));
+        store.save(new ModConfig(Map.of(), Set.of(), Map.of()));
 
         assertTrue(Files.exists(file));
     }
@@ -159,5 +160,53 @@ class ConfigStoreTest {
         Path resolved = ConfigStore.resolveConfigDir(tempDir);
 
         assertEquals(tempDir, resolved);
+    }
+
+    // Gson이 없는 필드를 null로 채우는 문제(ModConfig의 기존 두 필드에서 이미 겪음)가
+    // positions 필드에도 똑같이 적용되는지 확인한다.
+    @Test
+    void aConfigMissingThePositionsKeyLoadsWithAnEmptyPositionsMap() throws IOException {
+        Path file = tempDir.resolve("mod-config.json");
+        Files.writeString(file, """
+            { "enabled": { "fps": true }, "favorites": [] }
+            """);
+
+        ModConfig loaded = new ConfigStore(file).load();
+
+        assertNotNull(loaded.positions(), "a missing 'positions' key must not become null");
+        assertTrue(loaded.positions().isEmpty());
+    }
+
+    @Test
+    void positionOrReturnsTheStoredPositionWhenPresent() {
+        HudPosition stored = HudPosition.of(0.2, 0.3, 1.0);
+        ModConfig config = new ModConfig(Map.of(), Set.of(), Map.of("speed", stored));
+
+        HudPosition result = config.positionOr("speed", HudPosition.of(0.0, 0.0, 1.0));
+
+        assertEquals(stored, result);
+    }
+
+    @Test
+    void positionOrReturnsTheFallbackWhenNothingIsStoredForThatId() {
+        ModConfig config = ModConfig.empty();
+        HudPosition fallback = HudPosition.of(0.1, 0.1, 1.0);
+
+        HudPosition result = config.positionOr("speed", fallback);
+
+        assertEquals(fallback, result);
+    }
+
+    @Test
+    void positionsMapIsImmutableJustLikeTheOtherTwoFields() throws IOException {
+        Path file = tempDir.resolve("mod-config.json");
+        Files.writeString(file, """
+            { "enabled": {}, "favorites": [], "positions": { "speed": { "xRatio": 0.1, "yRatio": 0.1, "scale": 1.0 } } }
+            """);
+
+        ModConfig loaded = new ConfigStore(file).load();
+
+        assertThrows(UnsupportedOperationException.class,
+            () -> loaded.positions().put("cps", HudPosition.of(0.0, 0.0, 1.0)));
     }
 }

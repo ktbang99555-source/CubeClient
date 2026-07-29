@@ -152,7 +152,7 @@ public class ModListScreen extends Screen {
     private void onToggle(Feature feature) {
         Map<String, Boolean> enabled = new HashMap<>(config.enabled());
         enabled.put(feature.id(), !config.isEnabled(feature.id()));
-        config = new ModConfig(enabled, config.favorites());
+        config = new ModConfig(enabled, config.favorites(), config.positions());
         persist();
     }
 
@@ -161,7 +161,7 @@ public class ModListScreen extends Screen {
         if (!favorites.remove(feature.id())) {
             favorites.add(feature.id());
         }
-        config = new ModConfig(config.enabled(), favorites);
+        config = new ModConfig(config.enabled(), favorites, config.positions());
         persist();
         // Favorite order changed, so the grid must re-sort rather than just repaint — but not
         // from inside this click. See rebuildQueued.
