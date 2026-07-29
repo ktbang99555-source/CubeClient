@@ -155,9 +155,9 @@ class LoaderInstallerTest {
         LoaderInstaller.InstalledLoader result =
             installer(fetcher, downloader).install("fabric", "1.21.4", tempDir);
 
-        assertEquals(downloader.destinations, result.extraClasspath());
-        // The 2 loader libraries from PROFILE plus Fabric API, which is downloaded separately.
-        assertEquals(3, result.extraClasspath().size());
+        // Only the 2 loader libraries from PROFILE. Fabric API is downloaded too, but it is a
+        // mod rather than a library and is reported separately — see the tests below.
+        assertEquals(2, result.extraClasspath().size());
     }
 
     // Fabric API is a separate distribution from Fabric Loader, but ScreenEvents and
@@ -173,9 +173,41 @@ class LoaderInstallerTest {
 
         assertTrue(downloader.urls.stream().anyMatch(u -> u.contains("fabric-api")),
             "actual: " + downloader.urls);
+        assertTrue(result.modJars().stream().anyMatch(p -> p.toString().contains("fabric-api")),
+            "actual: " + result.modJars());
+    }
+
+    /*
+     * Caught by live testing, not by any test that existed at the time: Fabric API was put on
+     * the classpath, and Fabric Loader refused to start with "requires fabric-api, which is
+     * missing" — it discovers mods by scanning the profile's mods/ folder and never looks at
+     * the classpath. The jar was present and invisible.
+     *
+     * It must not be in both places either. Loading one jar through two routes is how the
+     * duplicate-ASM failure this launcher already hit happens.
+     */
+    @Test
+    void fabricApiIsReportedAsAModAndNotAlsoAsALibrary() throws IOException {
+        FakeFetcher fetcher = new FakeFetcher();
+        RecordingDownloader downloader = new RecordingDownloader(fetcher);
+
+        LoaderInstaller.InstalledLoader result =
+            installer(fetcher, downloader).install("fabric", "1.21.4", tempDir);
+
         assertTrue(result.extraClasspath().stream()
-            .anyMatch(p -> p.toString().contains("fabric-api")),
-            "actual: " + result.extraClasspath());
+                .noneMatch(p -> p.toString().contains("fabric-api")),
+            "Fabric API must not be on the classpath: " + result.extraClasspath());
+    }
+
+    @Test
+    void vanillaReportsNoModJars() throws IOException {
+        FakeFetcher fetcher = new FakeFetcher();
+        RecordingDownloader downloader = new RecordingDownloader(fetcher);
+
+        LoaderInstaller.InstalledLoader result =
+            installer(fetcher, downloader).install("vanilla", "1.21.4", tempDir);
+
+        assertTrue(result.modJars().isEmpty());
     }
 
     @Test

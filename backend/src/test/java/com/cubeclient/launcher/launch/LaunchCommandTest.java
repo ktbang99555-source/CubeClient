@@ -268,7 +268,7 @@ class LaunchCommandTest {
     }
 
     @Test
-    void aNullModJarSourceLaunchesWithoutDeployingAnything() throws IOException {
+    void aNullModJarSourceLaunchesWithoutTheCubeClientMod() throws IOException {
         LaunchCommand launchCommand = fabricLaunchCommand();
         Profile profile = new Profile("fabric-test", "1.21.4", "fabric", List.of());
         Path sharedRoot = tempDir;
@@ -278,6 +278,31 @@ class LaunchCommandTest {
             profile, gameDir, sharedRoot, "windows", Session.offline(profile.id()), null);
 
         assertEquals(0, exitCode);
-        assertFalse(Files.exists(gameDir.resolve("mods")));
+        // mods/ still gets created — Fabric API is deployed for every Fabric profile. What must
+        // be absent is CubeClient's own mod, which was not supplied on this run.
+        assertFalse(Files.exists(gameDir.resolve("mods").resolve("cubeclient-mod-0.1.0.jar")));
+    }
+
+    /*
+     * Live testing found this, no test did: Fabric API was put on the classpath, and Fabric
+     * Loader refused to start with "requires fabric-api, which is missing" — it discovers mods
+     * by scanning mods/ and never reads the classpath.
+     */
+    @Test
+    void fabricApiIsDeployedIntoModsEvenWithoutTheCubeClientMod() throws IOException {
+        LaunchCommand launchCommand = fabricLaunchCommand();
+        Profile profile = new Profile("fabric-test", "1.21.4", "fabric", List.of());
+        Path sharedRoot = tempDir;
+        Path gameDir = sharedRoot.resolve("instances").resolve(profile.id());
+
+        launchCommand.run(
+            profile, gameDir, sharedRoot, "windows", Session.offline(profile.id()), null);
+
+        Path modsDir = gameDir.resolve("mods");
+        assertTrue(Files.exists(modsDir), "Fabric API alone should have created mods/");
+        try (var entries = Files.list(modsDir)) {
+            assertTrue(entries.anyMatch(p -> p.getFileName().toString().contains("fabric-api")),
+                "Fabric API must land in mods/, not only on the classpath");
+        }
     }
 }

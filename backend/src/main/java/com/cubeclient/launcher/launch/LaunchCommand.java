@@ -91,6 +91,14 @@ public class LaunchCommand {
         events.progress("loader", 85);
         var loader = loaderInstaller.install(profile.loader(), profile.mcVersion(), sharedRoot);
 
+        // Jars the loader itself reports as mods — Fabric API, which CubeClient's own mod
+        // declares a dependency on. Fabric Loader finds mods by scanning mods/, so a jar merely
+        // on the classpath is invisible to it: leaving Fabric API there made the game refuse to
+        // start with "requires fabric-api, which is missing".
+        for (Path modJar : loader.modJars()) {
+            modDeployer.deploy(modJar, gameDir);
+        }
+
         // Only Fabric profiles can load a mod at all, and only when the launcher told us where
         // the mod jar is (it may not have been built yet in a dev checkout — that must not
         // block launching vanilla or Fabric-without-the-modpack).

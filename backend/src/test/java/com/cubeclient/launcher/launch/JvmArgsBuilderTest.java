@@ -114,7 +114,8 @@ class JvmArgsBuilderTest {
         Path sharedRoot = Path.of("C:", "AppData", "CubeClient");
         Path loaderJar = sharedRoot.resolve(Path.of("libraries", "net", "fabricmc", "fabric-loader.jar"));
         InstalledLoader loader = new InstalledLoader(
-            "net.fabricmc.loader.impl.launch.knot.KnotClient", List.of(loaderJar), java.util.Set.of());
+            "net.fabricmc.loader.impl.launch.knot.KnotClient", List.of(loaderJar), java.util.Set.of(),
+            List.of());
 
         List<String> command = new JvmArgsBuilder().build(
             new Profile("fabric-1.21", "1.21.4", "fabric", List.of()),
@@ -186,7 +187,8 @@ class JvmArgsBuilderTest {
         InstalledLoader loader = new InstalledLoader(
             "net.fabricmc.loader.impl.launch.knot.KnotClient",
             List.of(fabricAsm),
-            java.util.Set.of("org/ow2/asm/asm"));
+            java.util.Set.of("org/ow2/asm/asm"),
+            List.of());
 
         String classpath = new JvmArgsBuilder().build(
             new Profile("fabric-1.21", "1.21.4", "fabric", List.of()),

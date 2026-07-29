@@ -62,10 +62,23 @@ public class LoaderInstaller {
          * does, and having both on the classpath makes its loader abort at startup with
          * "duplicate ASM classes found on classpath" — the game never opens.
          */
-        Set<String> supersededModules
+        Set<String> supersededModules,
+
+        /**
+         * Jars that are <em>mods</em>, to be copied into the profile's {@code mods/} folder.
+         *
+         * <p>Separate from {@link #extraClasspath} because Fabric Loader discovers mods by
+         * scanning that folder, not by reading the classpath. Fabric API sat on the classpath
+         * at first and the game refused to start with "requires fabric-api, which is missing"
+         * — the jar was right there and the loader could not see it.
+         *
+         * <p>They must not also be on the classpath. Loading the same jar through both routes
+         * is how the duplicate-class failures this launcher already hit with ASM happen.
+         */
+        List<Path> modJars
     ) {
         public static InstalledLoader none() {
-            return new InstalledLoader(null, List.of(), Set.of());
+            return new InstalledLoader(null, List.of(), Set.of(), List.of());
         }
 
         public boolean isEmpty() {
@@ -136,9 +149,14 @@ public class LoaderInstaller {
         // Maven host, so it reuses downloadLibrary rather than introducing a second HTTP
         // mechanism. Every Fabric profile needs it — CubeClient's own mod depends on the
         // ScreenEvents and HudRenderCallback APIs it provides.
-        classpath.add(downloadLibrary(FABRIC_API_COORDINATE, FABRIC_MAVEN, sharedRoot));
+        //
+        // It is a MOD, not a library: reported in modJars so it gets copied into the profile's
+        // mods/ folder. Putting it on the classpath instead is what made the game refuse to
+        // start with "requires fabric-api, which is missing" — Fabric Loader only discovers
+        // mods by scanning that folder.
+        List<Path> modJars = List.of(downloadLibrary(FABRIC_API_COORDINATE, FABRIC_MAVEN, sharedRoot));
 
-        return new InstalledLoader(mainClass, classpath, superseded);
+        return new InstalledLoader(mainClass, classpath, superseded, modJars);
     }
 
     private String newestLoaderVersion(String metaHost, String mcVersion) throws IOException {
