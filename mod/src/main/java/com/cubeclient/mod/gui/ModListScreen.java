@@ -70,7 +70,7 @@ public class ModListScreen extends Screen {
         // the last tab straight on top of the search field: Minecraft never scales a GUI below
         // 320 units wide, and five readable tabs plus a usable text box do not fit in 320.
         int tabY = 24;
-        int tabCount = Category.values().length + 1; // the categories, plus 전부
+        int tabCount = Category.values().length + 2; // the categories, plus 전부, plus HUD 조절
         int tabGap = 4;
         int tabWidth = Math.min(70, (width - 2 * MARGIN - tabGap * (tabCount - 1)) / tabCount);
         int tabX = MARGIN;
@@ -92,6 +92,12 @@ public class ModListScreen extends Screen {
             }).dimensions(tabX, tabY, tabWidth, TAB_HEIGHT).build());
             tabX += tabWidth + tabGap;
         }
+
+        // Category enum에 넣지 않는다 — 필터가 아니라 다른 화면으로의 이동이라 의미가 다르다.
+        addDrawableChild(ButtonWidget.builder(Text.literal("HUD 조절"), b ->
+            client.setScreen(new HudEditorScreen(this, registry, cachedConfig))
+        ).dimensions(tabX, tabY, tabWidth, TAB_HEIGHT).build());
+        tabX += tabWidth + tabGap;
 
         searchField = new TextFieldWidget(
             textRenderer, MARGIN, tabY + TAB_HEIGHT + 4, width - 2 * MARGIN, 20,
