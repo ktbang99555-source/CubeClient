@@ -116,6 +116,12 @@ public class ModListScreen extends Screen {
         cards.forEach(this::remove);
         cards.clear();
 
+        // A category/search change can shrink the visible set while still scrolled deep into a
+        // longer list; without re-clamping here, startY below is computed from a stale, too-large
+        // scrollOffset and every card lands above GRID_TOP, inside the scissor region render()
+        // clips out — the grid looks empty even though matching cards exist.
+        scrollOffset = Math.min(scrollOffset, computeMaxScroll());
+
         List<Feature> visible = registry.list(activeCategory, searchText, config.favorites());
 
         int cardWidth = 140;
