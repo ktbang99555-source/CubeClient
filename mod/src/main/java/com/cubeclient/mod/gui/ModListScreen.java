@@ -1,6 +1,6 @@
 package com.cubeclient.mod.gui;
 
-import com.cubeclient.mod.config.ConfigStore;
+import com.cubeclient.mod.config.CachedConfig;
 import com.cubeclient.mod.config.ModConfig;
 import com.cubeclient.mod.registry.Category;
 import com.cubeclient.mod.registry.Feature;
@@ -33,7 +33,7 @@ public class ModListScreen extends Screen {
 
     private final Screen parent;
     private final FeatureRegistry registry;
-    private final ConfigStore configStore;
+    private final CachedConfig cachedConfig;
 
     private ModConfig config;
     private Category activeCategory; // null = 전부
@@ -52,11 +52,11 @@ public class ModListScreen extends Screen {
      */
     private boolean rebuildQueued;
 
-    public ModListScreen(Screen parent, FeatureRegistry registry, ConfigStore configStore) {
+    public ModListScreen(Screen parent, FeatureRegistry registry, CachedConfig cachedConfig) {
         super(Text.literal("클라이언트 설정"));
         this.parent = parent;
         this.registry = registry;
-        this.configStore = configStore;
+        this.cachedConfig = cachedConfig;
     }
 
     @Override
@@ -106,13 +106,7 @@ public class ModListScreen extends Screen {
     }
 
     private ModConfig loadConfigOrEmpty() {
-        try {
-            return configStore.load();
-        } catch (IOException e) {
-            // A screen cannot surface a launcher-style error event; a broken config is treated
-            // as an empty one and the player simply starts from every feature off.
-            return ModConfig.empty();
-        }
+        return cachedConfig.current();
     }
 
     private void rebuildCards() {
@@ -170,7 +164,7 @@ public class ModListScreen extends Screen {
 
     private void persist() {
         try {
-            configStore.save(config);
+            cachedConfig.save(config);
         } catch (IOException e) {
             if (client != null && client.player != null) {
                 client.player.sendMessage(

@@ -1,17 +1,14 @@
 package com.cubeclient.mod.features;
 
+import com.cubeclient.mod.gui.HudPosition;
+import com.cubeclient.mod.gui.HudRenderUtil;
 import com.cubeclient.mod.gui.Theme;
 import com.cubeclient.mod.registry.Category;
-import com.cubeclient.mod.registry.Feature;
+import com.cubeclient.mod.registry.PositionedHudFeature;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 
-/**
- * The one feature this task ships, chosen because Minecraft already tracks and exposes an FPS
- * counter internally (MinecraftClient.getCurrentFps()) — this task is about proving the
- * registry-to-screen-to-render chain works end to end, not about building a new metric.
- */
-public class FpsDisplay implements Feature {
+public class FpsDisplay implements PositionedHudFeature {
     @Override
     public String id() {
         return "fps";
@@ -27,9 +24,16 @@ public class FpsDisplay implements Feature {
         return Category.HUD;
     }
 
-    public void render(DrawContext context) {
+    @Override
+    public HudPosition defaultPosition() {
+        return HudPosition.of(0.01, 0.01, 1.0);
+    }
+
+    @Override
+    public void render(DrawContext context, HudPosition pos) {
         MinecraftClient client = MinecraftClient.getInstance();
         String text = client.getCurrentFps() + " FPS";
-        context.drawTextWithShadow(client.textRenderer, text, 4, 4, Theme.TEXT);
+        HudRenderUtil.drawScaledText(context, pos, (ctx, x, y) ->
+            ctx.drawTextWithShadow(client.textRenderer, text, x, y, Theme.TEXT));
     }
 }
