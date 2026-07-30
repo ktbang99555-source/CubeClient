@@ -47,6 +47,12 @@ public class HudEditorScreen extends Screen {
 
     @Override
     protected void init() {
+        // Screen.resize() → refreshWidgetPositions() → clearAndInit() re-runs init() on every
+        // window resize, GUI-scale change, and F11 toggle. Without clearing first, entries would
+        // accumulate duplicates across resizes, corrupting both saveAll() and hit-testing.
+        entries.clear();
+        dragging = null;
+
         ModConfig config = cachedConfig.current();
         for (Feature feature : registry.all()) {
             if (feature instanceof PositionedHudFeature hudFeature && config.isEnabled(hudFeature.id())) {
@@ -63,12 +69,16 @@ public class HudEditorScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        // 배경을 덮지 않는다 — 실제 게임 화면 위 어디에 HUD가 앉는지 보면서 조절해야 한다.
+        // super.render()를 먼저 호출한다. Screen.render()가 맨 처음 하는 일이
+        // renderBackground()이고, 이게 화면 전체에 블러 + 어둡게 하는 텍스처를 씌운다 —
+        // entries를 그 다음에 그려야 실제 라이브 HUD 배치를 흐림/어둡게 하지 않은 채로
+        // 보여줄 수 있다. 순서를 반대로 하면 편집 화면이 흐릿하고 어두운 스냅샷을 편집하는
+        // 꼴이 되어 이 화면의 존재 목적과 정반대가 된다.
+        super.render(context, mouseX, mouseY, delta);
         for (Entry entry : entries) {
             entry.feature.render(context, entry.position);
             drawOverlay(context, entry);
         }
-        super.render(context, mouseX, mouseY, delta);
     }
 
     private void drawOverlay(DrawContext context, Entry entry) {
@@ -96,7 +106,12 @@ public class HudEditorScreen extends Screen {
         if (super.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
-        for (Entry entry : entries) {
+        // entries는 render()에서 리스트 순서대로 그려지므로(뒤쪽 = 위에 겹쳐 그려짐), 클릭
+        // 판정도 역순으로 훑어야 화면에 보이는 맨 위 요소가 히트테스트를 이긴다. 기본 간격
+        // (yRatio 0.05)에서는 오버레이 박스끼리 겹치는 경우가 흔해서, 순서를 맞추지 않으면
+        // 시각적으로 위에 있는 요소가 클릭되지 않고 그 아래 가려진 요소가 대신 반응한다.
+        for (int i = entries.size() - 1; i >= 0; i--) {
+            Entry entry = entries.get(i);
             Bounds bounds = boundsOf(entry);
             boolean hitHandle = mouseX >= bounds.x + bounds.width - HANDLE_SIZE && mouseX <= bounds.x + bounds.width
                 && mouseY >= bounds.y + bounds.height - HANDLE_SIZE && mouseY <= bounds.y + bounds.height;
