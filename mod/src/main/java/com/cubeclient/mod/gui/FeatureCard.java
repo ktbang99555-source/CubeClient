@@ -59,9 +59,10 @@ public class FeatureCard extends ClickableWidget {
         TextRenderer textRenderer = MinecraftClient.getInstance().textRenderer;
         context.drawText(textRenderer, feature.displayName(), getX() + 8, getY() + 8, Theme.TEXT, false);
 
-        // Favorite heart, top-right corner of the card.
-        context.drawText(textRenderer, favorite ? "♥" : "♡",
-            getX() + width - 16, getY() + 8, favorite ? Theme.ACCENT : Theme.MUTED, false);
+        // Favorite heart, top-right corner of the card. Drawn as a shape, not a "♥"/"♡" glyph —
+        // Minecraft's default font doesn't have those characters and renders a missing-glyph box
+        // instead, the exact problem the icon/gear below were already redesigned to avoid.
+        drawHeart(context, getX() + width - 16, getY() + 8, favorite ? Theme.ACCENT : Theme.MUTED);
 
         drawIcon(context, getX() + width / 2 - 12, getY() + 26);
 
@@ -106,6 +107,15 @@ public class FeatureCard extends ClickableWidget {
                 context.fill(x + 2, y + 14, x + 22, y + 18, tint);
             }
         }
+    }
+
+    /** A small pixel heart — filled bumps, a body, and a tapering point. */
+    private void drawHeart(DrawContext context, int x, int y, int color) {
+        context.fill(x, y, x + 2, y + 2, color);
+        context.fill(x + 3, y, x + 5, y + 2, color);
+        context.fill(x, y + 2, x + 5, y + 4, color);
+        context.fill(x + 1, y + 4, x + 4, y + 5, color);
+        context.fill(x + 2, y + 5, x + 3, y + 6, color);
     }
 
     /** Inert in B0 — drawn muted so it reads as "there, but not yet". */
