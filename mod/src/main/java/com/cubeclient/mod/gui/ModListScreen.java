@@ -52,6 +52,9 @@ public class ModListScreen extends Screen {
      */
     private boolean rebuildQueued;
 
+    private int scrollOffset;
+    private static final int SCROLL_STEP = 20;
+
     public ModListScreen(Screen parent, FeatureRegistry registry, CachedConfig cachedConfig) {
         super(Text.literal("클라이언트 설정"));
         this.parent = parent;
@@ -122,7 +125,7 @@ public class ModListScreen extends Screen {
         // narrow window, and Minecraft scales GUIs down to 320 units wide.
         int columns = Math.max(1, (width - 2 * MARGIN + gap) / (cardWidth + gap));
         int startX = MARGIN;
-        int startY = GRID_TOP;
+        int startY = GRID_TOP - scrollOffset;
 
         for (int i = 0; i < visible.size(); i++) {
             Feature feature = visible.get(i);
@@ -181,8 +184,30 @@ public class ModListScreen extends Screen {
         }
 
         context.fill(0, 0, width, height, Theme.GROUND);
+        context.enableScissor(0, GRID_TOP, width, height);
         super.render(context, mouseX, mouseY, delta);
+        context.disableScissor();
         context.drawCenteredTextWithShadow(textRenderer, title, width / 2, 8, Theme.TEXT);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        int maxScroll = computeMaxScroll();
+        scrollOffset = (int) Math.max(0, Math.min(maxScroll, scrollOffset - verticalAmount * SCROLL_STEP));
+        rebuildQueued = true;
+        return true;
+    }
+
+    private int computeMaxScroll() {
+        List<Feature> visible = registry.list(activeCategory, searchText, config.favorites());
+        int cardWidth = 140;
+        int gap = 12;
+        int columns = Math.max(1, (width - 2 * MARGIN + gap) / (cardWidth + gap));
+        int rows = (visible.size() + columns - 1) / columns;
+        int cardHeight = 90;
+        int totalContentHeight = rows * (cardHeight + gap);
+        int visibleHeight = height - GRID_TOP - MARGIN;
+        return Math.max(0, totalContentHeight - visibleHeight);
     }
 
     @Override
