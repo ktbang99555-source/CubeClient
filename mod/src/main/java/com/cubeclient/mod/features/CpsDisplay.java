@@ -37,14 +37,22 @@ public class CpsDisplay implements PositionedHudFeature {
 
     public void recordClick() {
         clickTimestamps.addLast(clockMillis.getAsLong());
+        evictExpired();
     }
 
     public int currentCps() {
+        evictExpired();
+        return clickTimestamps.size();
+    }
+
+    // CPS HUD가 꺼져 있어도 recordClick()은 매 틱 호출되므로, render()/currentCps()를
+    // 거치지 않고도 오래된 타임스탬프가 계속 정리되도록 recordClick()에서도 이 로직을
+    // 호출한다. 그렇지 않으면 클릭 기록이 세션 내내 무한정 쌓인다.
+    private void evictExpired() {
         long now = clockMillis.getAsLong();
         while (!clickTimestamps.isEmpty() && now - clickTimestamps.peekFirst() >= WINDOW_MILLIS) {
             clickTimestamps.pollFirst();
         }
-        return clickTimestamps.size();
     }
 
     @Override
