@@ -3,6 +3,7 @@ package com.cubeclient.mod;
 import com.cubeclient.mod.config.CachedConfig;
 import com.cubeclient.mod.config.ConfigStore;
 import com.cubeclient.mod.features.FpsDisplay;
+import com.cubeclient.mod.features.SpeedDisplay;
 import com.cubeclient.mod.gui.ClientSettingsButton;
 import com.cubeclient.mod.registry.FeatureRegistry;
 import com.cubeclient.mod.registry.PositionedHudFeature;
@@ -23,6 +24,7 @@ public class CubeClientModClient implements ClientModInitializer {
 
         FeatureRegistry registry = new FeatureRegistry();
         registry.register(new FpsDisplay());
+        registry.register(new SpeedDisplay());
 
         ClientSettingsButton.register(registry, cachedConfig);
 
