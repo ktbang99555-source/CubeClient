@@ -22,8 +22,8 @@ public class ZoomKey implements Feature {
     private static final double MAX_DELTA_SECONDS = 0.1;
 
     private final CachedConfig cachedConfig;
-    private final KeyBinding zoomKey;
     private final LongSupplier clockMillis;
+    private KeyBinding zoomKey;
 
     private boolean zooming;
     private double progress; // 0.0 = 완전히 줌 아웃, 1.0 = 완전히 줌 인
@@ -33,15 +33,15 @@ public class ZoomKey implements Feature {
 
     public ZoomKey(CachedConfig cachedConfig) {
         this(cachedConfig, System::currentTimeMillis);
+        this.zoomKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+            "key.cubeclient.zoom", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_C, "key.categories.cubeclient"));
+        ClientTickEvents.END_CLIENT_TICK.register(this::onTick);
+        WorldRenderEvents.START.register(this::onRenderFrame);
     }
 
     ZoomKey(CachedConfig cachedConfig, LongSupplier clockMillis) {
         this.cachedConfig = cachedConfig;
         this.clockMillis = clockMillis;
-        this.zoomKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-            "key.cubeclient.zoom", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_C, "key.categories.cubeclient"));
-        ClientTickEvents.END_CLIENT_TICK.register(this::onTick);
-        WorldRenderEvents.START.register(this::onRenderFrame);
     }
 
     private boolean isZoomKeyPressed(MinecraftClient client) {
