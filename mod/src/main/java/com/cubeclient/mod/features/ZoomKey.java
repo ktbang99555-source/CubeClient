@@ -1,9 +1,9 @@
 package com.cubeclient.mod.features;
 
 import com.cubeclient.mod.config.CachedConfig;
-import com.cubeclient.mod.zoom.ZoomFovState;
 import com.cubeclient.mod.registry.Category;
 import com.cubeclient.mod.registry.Feature;
+import com.cubeclient.mod.zoom.ZoomFovState;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;

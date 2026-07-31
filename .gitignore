@@ -8,3 +8,4 @@ mod/logs/
 ui/node_modules/
 ui/dist/
 *.log
+/launch-cubeclient.bat
