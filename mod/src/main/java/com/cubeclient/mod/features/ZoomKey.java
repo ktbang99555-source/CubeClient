@@ -1,7 +1,7 @@
 package com.cubeclient.mod.features;
 
 import com.cubeclient.mod.config.CachedConfig;
-import com.cubeclient.mod.mixin.ZoomFovState;
+import com.cubeclient.mod.zoom.ZoomFovState;
 import com.cubeclient.mod.registry.Category;
 import com.cubeclient.mod.registry.Feature;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;

@@ -1,5 +1,6 @@
 package com.cubeclient.mod.mixin;
 
+import com.cubeclient.mod.zoom.ZoomFovState;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.GameRenderer;
 import org.spongepowered.asm.mixin.Mixin;

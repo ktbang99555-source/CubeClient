@@ -1,4 +1,4 @@
-package com.cubeclient.mod.mixin;
+package com.cubeclient.mod.zoom;
 
 import org.junit.jupiter.api.Test;
 

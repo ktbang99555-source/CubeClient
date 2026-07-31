@@ -1,4 +1,4 @@
-package com.cubeclient.mod.mixin;
+package com.cubeclient.mod.zoom;
 
 /**
  * ZoomKey(일반 코드)와 GameRendererMixin(믹신) 사이의 유일한 다리. C키로 줌 중일 때만
