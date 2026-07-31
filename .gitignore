@@ -3,6 +3,8 @@ backend/build/
 backend/.gradle/
 mod/build/
 mod/.gradle/
+mod/run/
+mod/logs/
 ui/node_modules/
 ui/dist/
 *.log
