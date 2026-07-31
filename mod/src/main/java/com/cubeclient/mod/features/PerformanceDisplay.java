@@ -6,14 +6,39 @@ import com.cubeclient.mod.gui.Theme;
 import com.cubeclient.mod.registry.Category;
 import com.cubeclient.mod.registry.PositionedHudFeature;
 import com.sun.management.OperatingSystemMXBean;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 
 import java.lang.management.ManagementFactory;
 
 public class PerformanceDisplay implements PositionedHudFeature {
+    // getProcessCpuLoad()는 OS 질의라 가볍지 않다 — 매 렌더 프레임(초당 60~100회 이상) 호출하면
+    // 그 자체로 FPS를 눈에 띄게 깎아먹는다(실기기 테스트로 발견, ~40FPS까지 하락). CPU/RAM은
+    // 어차피 초 단위로만 의미 있게 바뀌므로 틱마다가 아니라 1초에 한 번만 재고, render()는
+    // 캐시된 값을 읽기만 한다.
+    private static final int SAMPLE_INTERVAL_TICKS = 20;
+
     private final OperatingSystemMXBean osBean =
         (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
+    private int ticksSinceSample = SAMPLE_INTERVAL_TICKS;
+    private double cachedCpuLoad = -1;
+    private long cachedUsedMemory;
+    private long cachedMaxMemory = Long.MAX_VALUE;
+
+    public PerformanceDisplay() {
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            ticksSinceSample++;
+            if (ticksSinceSample < SAMPLE_INTERVAL_TICKS) {
+                return;
+            }
+            ticksSinceSample = 0;
+            cachedCpuLoad = osBean.getProcessCpuLoad();
+            Runtime runtime = Runtime.getRuntime();
+            cachedUsedMemory = runtime.totalMemory() - runtime.freeMemory();
+            cachedMaxMemory = runtime.maxMemory();
+        });
+    }
 
     @Override
     public String id() {
@@ -38,10 +63,7 @@ public class PerformanceDisplay implements PositionedHudFeature {
     @Override
     public void render(DrawContext context, HudPosition pos) {
         MinecraftClient client = MinecraftClient.getInstance();
-        double cpuLoad = osBean.getProcessCpuLoad();
-        Runtime runtime = Runtime.getRuntime();
-        long usedMemory = runtime.totalMemory() - runtime.freeMemory();
-        String text = formatLine(cpuLoad, usedMemory, runtime.maxMemory());
+        String text = formatLine(cachedCpuLoad, cachedUsedMemory, cachedMaxMemory);
         HudRenderUtil.drawScaledText(context, pos, (ctx, x, y) ->
             ctx.drawTextWithShadow(client.textRenderer, text, x, y, Theme.TEXT));
     }

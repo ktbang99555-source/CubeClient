@@ -27,16 +27,19 @@ public class FeatureCard extends ClickableWidget {
     private boolean favorite;
     private final Consumer<Feature> onToggle;
     private final Consumer<Feature> onFavoriteToggle;
+    private final int visibleTop;
 
     public FeatureCard(int x, int y, int width, int height, Feature feature,
                         boolean enabled, boolean favorite,
-                        Consumer<Feature> onToggle, Consumer<Feature> onFavoriteToggle) {
+                        Consumer<Feature> onToggle, Consumer<Feature> onFavoriteToggle,
+                        int visibleTop) {
         super(x, y, width, height, Text.literal(feature.displayName()));
         this.feature = feature;
         this.enabled = enabled;
         this.favorite = favorite;
         this.onToggle = onToggle;
         this.onFavoriteToggle = onFavoriteToggle;
+        this.visibleTop = visibleTop;
     }
 
     public Feature feature() {
@@ -53,6 +56,11 @@ public class FeatureCard extends ClickableWidget {
 
     @Override
     protected void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+        // Scrolled above the grid's visible top — draw nothing. Below the screen's own bottom
+        // edge needs no equivalent check: nothing renders past height regardless.
+        if (getY() + height <= visibleTop) {
+            return;
+        }
         context.fill(getX(), getY(), getX() + width, getY() + height, Theme.PANEL);
         context.drawBorder(getX(), getY(), width, height, Theme.BORDER);
 
@@ -152,5 +160,14 @@ public class FeatureCard extends ClickableWidget {
     @Override
     protected void appendClickableNarrations(net.minecraft.client.gui.screen.narration.NarrationMessageBuilder builder) {
         appendDefaultNarrations(builder);
+    }
+
+    // A card scrolled above the grid isn't drawn (see renderWidget), but its stored rectangle
+    // still overlaps the tab row above it — without this, a click aimed at a tab could land on
+    // an invisible card underneath instead. This is the only guard needed; scissor is render-only
+    // and was never a substitute for it in the first place.
+    @Override
+    public boolean isMouseOver(double mouseX, double mouseY) {
+        return mouseY >= visibleTop && super.isMouseOver(mouseX, mouseY);
     }
 }

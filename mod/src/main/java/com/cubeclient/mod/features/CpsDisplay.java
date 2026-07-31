@@ -18,16 +18,20 @@ public class CpsDisplay implements PositionedHudFeature {
 
     private final LongSupplier clockMillis;
     private final Deque<Long> clickTimestamps = new ArrayDeque<>();
+    private boolean attackKeyWasDown;
 
     public CpsDisplay() {
         this(System::currentTimeMillis);
-        // KeyBinding.wasPressed()는 호출할 때마다 큐를 1개씩 소모한다. 틱마다 한 번만
-        // 호출하면 한 틱(1/20초)에 여러 번 눌린 빠른 연타 중 한 번만 세게 되므로, while로
-        // 큐를 완전히 비우면서 소모마다 클릭을 하나씩 기록한다.
+        // wasPressed()는 큐를 소모하는 방식인데, 마인크래프트 자체도 매 틱 공격/채굴 처리를
+        // 위해 이 같은 attackKey의 wasPressed()를 먼저 소모한다 — 그러면 우리 쪽 while 루프엔
+        // 아무것도 안 남아 CPS가 항상 0으로 보인다(실기기 테스트로 발견). isPressed()는 소모되지
+        // 않는 "지금 눌려있나" 상태만 보므로, 이전 틱과 비교해 눌림 시작(edge)만 직접 잡는다.
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            while (client.options.attackKey.wasPressed()) {
+            boolean isDown = client.options.attackKey.isPressed();
+            if (isDown && !attackKeyWasDown) {
                 recordClick();
             }
+            attackKeyWasDown = isDown;
         });
     }
 

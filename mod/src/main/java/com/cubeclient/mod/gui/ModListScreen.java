@@ -151,7 +151,8 @@ public class ModListScreen extends Screen {
                 config.isEnabled(feature.id()),
                 config.favorites().contains(feature.id()),
                 this::onToggle,
-                this::onFavoriteToggle
+                this::onFavoriteToggle,
+                GRID_TOP
             );
             cards.add(card);
             addDrawableChild(card);
@@ -196,9 +197,11 @@ public class ModListScreen extends Screen {
         }
 
         context.fill(0, 0, width, height, Theme.GROUND);
-        context.enableScissor(0, GRID_TOP, width, height);
+        // No scissor here — it used to wrap this whole call, which clipped away every widget
+        // super.render() draws, including the tab row and search field above GRID_TOP (both end
+        // up invisible, though still clickable, since scissor doesn't affect hit-testing). Cards
+        // scrolled above the grid now hide themselves (see FeatureCard.renderWidget/isMouseOver).
         super.render(context, mouseX, mouseY, delta);
-        context.disableScissor();
         context.drawCenteredTextWithShadow(textRenderer, title, width / 2, 8, Theme.TEXT);
     }
 
