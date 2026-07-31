@@ -5,7 +5,6 @@ import com.cubeclient.mod.gui.HudRenderUtil;
 import com.cubeclient.mod.gui.Theme;
 import com.cubeclient.mod.registry.Category;
 import com.cubeclient.mod.registry.PositionedHudFeature;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 
@@ -22,20 +21,9 @@ public class CpsDisplay implements PositionedHudFeature {
 
     public CpsDisplay() {
         this(System::currentTimeMillis);
-        // wasPressed()는 큐를 소모하는 방식인데, 마인크래프트 자체도 매 틱 공격/채굴 처리를
-        // 위해 이 같은 attackKey의 wasPressed()를 먼저 소모한다 — 그러면 우리 쪽 while 루프엔
-        // 아무것도 안 남아 CPS가 항상 0으로 보인다(실기기 테스트로 발견). isPressed()는 소모되지
-        // 않는 "지금 눌려있나" 상태만 보므로, 이전 틱과 비교해 눌림 시작(edge)만 직접 잡는다.
-        ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            boolean isDown = client.options.attackKey.isPressed();
-            if (isDown && !attackKeyWasDown) {
-                recordClick();
-            }
-            attackKeyWasDown = isDown;
-        });
     }
 
-    public CpsDisplay(LongSupplier clockMillis) {
+    CpsDisplay(LongSupplier clockMillis) {
         this.clockMillis = clockMillis;
     }
 
@@ -49,9 +37,9 @@ public class CpsDisplay implements PositionedHudFeature {
         return clickTimestamps.size();
     }
 
-    // CPS HUD가 꺼져 있어도 recordClick()은 매 틱 호출되므로, render()/currentCps()를
-    // 거치지 않고도 오래된 타임스탬프가 계속 정리되도록 recordClick()에서도 이 로직을
-    // 호출한다. 그렇지 않으면 클릭 기록이 세션 내내 무한정 쌓인다.
+    // recordClick()을 직접 호출하는 호출부(테스트 등)가 곧바로 currentCps()를 부르지 않을
+    // 수도 있으므로, render()/currentCps()를 거치지 않고도 오래된 타임스탬프가 정리되도록
+    // recordClick()에서도 이 로직을 호출한다. 그렇지 않으면 클릭 기록이 무한정 쌓일 수 있다.
     private void evictExpired() {
         long now = clockMillis.getAsLong();
         while (!clickTimestamps.isEmpty() && now - clickTimestamps.peekFirst() >= WINDOW_MILLIS) {
@@ -82,6 +70,19 @@ public class CpsDisplay implements PositionedHudFeature {
     @Override
     public void render(DrawContext context, HudPosition pos) {
         MinecraftClient client = MinecraftClient.getInstance();
+
+        // isPressed()는 소모되지 않는 상태 읽기라 매 프레임 확인해도 안전하다. 이전엔 틱(20Hz)
+        // 단위로 확인했는데, 사람의 클릭 속도는 그 해상도를 쉽게 넘어서 실측 결과 CPS가
+        // 실제보다 낮게 나왔다 — 프레임(보통 60Hz 이상) 단위로 확인해 그 문제를 줄인다.
+        // wasPressed()(큐 소모형)를 다시 쓰지 않는 이유: 마인크래프트 자체도 매 틱 공격/채굴
+        // 처리를 위해 이 같은 attackKey의 wasPressed()를 먼저 소모하므로, 우리 쪽에서 호출하는
+        // 시점엔 이미 비어 있어 CPS가 항상 0으로 보인다(실기기 테스트로 발견).
+        boolean isDown = client.options.attackKey.isPressed();
+        if (isDown && !attackKeyWasDown) {
+            recordClick();
+        }
+        attackKeyWasDown = isDown;
+
         String text = currentCps() + " CPS";
         HudRenderUtil.drawScaledText(context, pos, (ctx, x, y) ->
             ctx.drawTextWithShadow(client.textRenderer, text, x, y, Theme.TEXT));
