@@ -6,6 +6,7 @@ import com.cubeclient.mod.features.CpsDisplay;
 import com.cubeclient.mod.features.DurabilityDisplay;
 import com.cubeclient.mod.features.FpsDisplay;
 import com.cubeclient.mod.features.PerformanceDisplay;
+import com.cubeclient.mod.features.PingDisplay;
 import com.cubeclient.mod.features.ResourcePackDisplay;
 import com.cubeclient.mod.features.SpeedDisplay;
 import com.cubeclient.mod.gui.ClientSettingsButton;
@@ -33,6 +34,7 @@ public class CubeClientModClient implements ClientModInitializer {
         registry.register(new PerformanceDisplay());
         registry.register(new ResourcePackDisplay());
         registry.register(new DurabilityDisplay());
+        registry.register(new PingDisplay());
 
         ClientSettingsButton.register(registry, cachedConfig);
 
