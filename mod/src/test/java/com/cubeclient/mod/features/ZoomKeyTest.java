@@ -8,16 +8,16 @@ class ZoomKeyTest {
 
     @Test
     void progressZeroIsTheOriginalValue() {
-        assertEquals(100.0, ZoomKey.lerp(100.0, 4.0, 0.0), 0.0001);
+        assertEquals(100.0, ZoomKey.lerp(100.0, 8.0, 0.0), 0.0001);
     }
 
     @Test
     void progressOneIsTheFullyZoomedTarget() {
-        assertEquals(25.0, ZoomKey.lerp(100.0, 4.0, 1.0), 0.0001);
+        assertEquals(12.5, ZoomKey.lerp(100.0, 8.0, 1.0), 0.0001);
     }
 
     @Test
     void progressHalfIsHalfwayBetween() {
-        assertEquals(62.5, ZoomKey.lerp(100.0, 4.0, 0.5), 0.0001);
+        assertEquals(56.25, ZoomKey.lerp(100.0, 8.0, 0.5), 0.0001);
     }
 }
