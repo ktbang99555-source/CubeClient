@@ -39,14 +39,6 @@ public class ComboCounter implements PositionedHudFeature {
             return;
         }
 
-        boolean isDown = client.options.attackKey.isPressed();
-        if (isDown && !attackKeyWasDown && client.targetedEntity instanceof LivingEntity target) {
-            pendingTarget = target;
-            pendingSwingTicksLeft = SWING_WINDOW_TICKS;
-            lastPendingTargetHurtTime = target.hurtTime;
-        }
-        attackKeyWasDown = isDown;
-
         if (pendingTarget != null) {
             if (pendingTarget.isRemoved()) {
                 pendingTarget = null;
@@ -99,6 +91,20 @@ public class ComboCounter implements PositionedHudFeature {
     @Override
     public void render(DrawContext context, HudPosition pos) {
         MinecraftClient client = MinecraftClient.getInstance();
+
+        // attackKey 엣지 감지는 프레임(보통 60Hz 이상) 단위인 render()에서 수행한다. 틱(20Hz)
+        // 단위인 onTick()에서 하면 사람의 클릭 속도가 그 해상도를 쉽게 넘어서 눌림-뗌이 두 틱
+        // 사이에서 통째로 끝나 상승 엣지를 놓칠 수 있다 — CpsDisplay에서 실기기 테스트로 발견해
+        // 고친 것과 동일한 문제. hurtTime 갱신·10틱 창·3초 타임아웃은 서버발 틱 동기화 상태라
+        // onTick()에 남겨둔다.
+        boolean isDown = client.options.attackKey.isPressed();
+        if (isDown && !attackKeyWasDown && client.targetedEntity instanceof LivingEntity target) {
+            pendingTarget = target;
+            pendingSwingTicksLeft = SWING_WINDOW_TICKS;
+            lastPendingTargetHurtTime = target.hurtTime;
+        }
+        attackKeyWasDown = isDown;
+
         String text = "콤보 " + combo;
         HudRenderUtil.drawScaled(context, pos, (ctx, x, y) ->
             ctx.drawTextWithShadow(client.textRenderer, text, x, y, Theme.TEXT));
