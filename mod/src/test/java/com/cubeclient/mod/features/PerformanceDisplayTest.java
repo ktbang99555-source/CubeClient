@@ -38,4 +38,22 @@ class PerformanceDisplayTest {
 
         assertEquals("CPU 10% | RAM 100%", line);
     }
+
+    // getProcessCpuLoad()/Runtime 메모리 조회는 매 렌더 프레임 부르면 그 자체로 FPS를 깎아먹으므로
+    // (실기기 테스트로 발견) 1초(20틱)에 한 번만 재샘플링한다. shouldSample()은 그 스로틀 판단만
+    // 떼어낸 순수 로직 — MinecraftClient/OperatingSystemMXBean 없이 경계값을 직접 검증한다.
+    @Test
+    void shouldSampleDoesNotFireBeforeInterval() {
+        assertEquals(false, PerformanceDisplay.shouldSample(19, 20));
+    }
+
+    @Test
+    void shouldSampleFiresAtExactlyTheInterval() {
+        assertEquals(true, PerformanceDisplay.shouldSample(20, 20));
+    }
+
+    @Test
+    void shouldSampleFiresPastTheInterval() {
+        assertEquals(true, PerformanceDisplay.shouldSample(25, 20));
+    }
 }

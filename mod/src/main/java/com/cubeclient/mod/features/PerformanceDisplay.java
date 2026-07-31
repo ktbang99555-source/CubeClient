@@ -29,15 +29,20 @@ public class PerformanceDisplay implements PositionedHudFeature {
     public PerformanceDisplay() {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             ticksSinceSample++;
-            if (ticksSinceSample < SAMPLE_INTERVAL_TICKS) {
-                return;
+            if (shouldSample(ticksSinceSample, SAMPLE_INTERVAL_TICKS)) {
+                ticksSinceSample = 0;
+                cachedCpuLoad = osBean.getProcessCpuLoad();
+                Runtime runtime = Runtime.getRuntime();
+                cachedUsedMemory = runtime.totalMemory() - runtime.freeMemory();
+                cachedMaxMemory = runtime.maxMemory();
             }
-            ticksSinceSample = 0;
-            cachedCpuLoad = osBean.getProcessCpuLoad();
-            Runtime runtime = Runtime.getRuntime();
-            cachedUsedMemory = runtime.totalMemory() - runtime.freeMemory();
-            cachedMaxMemory = runtime.maxMemory();
         });
+    }
+
+    /** Pure throttle decision, split out from the tick listener so it's testable without a
+     * MinecraftClient/OperatingSystemMXBean in play. */
+    static boolean shouldSample(int ticksSinceLastSample, int intervalTicks) {
+        return ticksSinceLastSample >= intervalTicks;
     }
 
     @Override
