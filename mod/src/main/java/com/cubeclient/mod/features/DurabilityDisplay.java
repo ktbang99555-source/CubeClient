@@ -30,7 +30,7 @@ public class DurabilityDisplay implements PositionedHudFeature {
 
     @Override
     public HudPosition defaultPosition() {
-        return HudPosition.of(0.80, 0.55, 1.0);
+        return HudPosition.of(0.78, 0.78, 1.0);
     }
 
     @Override

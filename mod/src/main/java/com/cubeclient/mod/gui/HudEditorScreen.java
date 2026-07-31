@@ -24,6 +24,7 @@ public class HudEditorScreen extends Screen {
     private static final int OVERLAY_MARGIN = 4;
     private static final int EXIT_BUTTON_WIDTH = 100;
     private static final int EXIT_BUTTON_HEIGHT = 20;
+    private static final int RESET_BUTTON_WIDTH = 100;
 
     private final Screen parent;
     private final FeatureRegistry registry;
@@ -64,6 +65,11 @@ public class HudEditorScreen extends Screen {
         addDrawableChild(ButtonWidget.builder(Text.literal("나가기"), b -> close())
             .dimensions(width / 2 - EXIT_BUTTON_WIDTH / 2, height - EXIT_BUTTON_HEIGHT - 8,
                 EXIT_BUTTON_WIDTH, EXIT_BUTTON_HEIGHT)
+            .build());
+
+        addDrawableChild(ButtonWidget.builder(Text.literal("위치 초기화"), b -> resetAll())
+            .dimensions(width / 2 - EXIT_BUTTON_WIDTH / 2 - RESET_BUTTON_WIDTH - 8, height - EXIT_BUTTON_HEIGHT - 8,
+                RESET_BUTTON_WIDTH, EXIT_BUTTON_HEIGHT)
             .build());
     }
 
@@ -155,6 +161,13 @@ public class HudEditorScreen extends Screen {
             dragging = null;
         }
         return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    private void resetAll() {
+        for (Entry entry : entries) {
+            entry.position = entry.feature.defaultPosition();
+        }
+        saveAll();
     }
 
     private void saveAll() {
