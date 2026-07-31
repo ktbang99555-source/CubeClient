@@ -197,10 +197,12 @@ public class ModListScreen extends Screen {
         }
 
         context.fill(0, 0, width, height, Theme.GROUND);
-        // No scissor here — it used to wrap this whole call, which clipped away every widget
-        // super.render() draws, including the tab row and search field above GRID_TOP (both end
-        // up invisible, though still clickable, since scissor doesn't affect hit-testing). Cards
-        // scrolled above the grid now hide themselves (see FeatureCard.renderWidget/isMouseOver).
+        // No screen-wide scissor here — it used to wrap this whole call, which clipped away every
+        // widget super.render() draws, including the tab row and search field above GRID_TOP (both
+        // end up invisible, though still clickable, since scissor doesn't affect hit-testing).
+        // Cards scrolled fully above the grid now hide themselves (see FeatureCard.renderWidget /
+        // isMouseOver), and a card straddling the visibleTop boundary scopes its own scissor
+        // internally to clip just the portion above it — so no screen-wide scissor is needed here.
         super.render(context, mouseX, mouseY, delta);
         context.drawCenteredTextWithShadow(textRenderer, title, width / 2, 8, Theme.TEXT);
     }

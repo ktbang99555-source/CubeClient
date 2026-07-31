@@ -61,6 +61,16 @@ public class FeatureCard extends ClickableWidget {
         if (getY() + height <= visibleTop) {
             return;
         }
+
+        // A card can straddle visibleTop — top edge above it, bottom edge below it — for the
+        // first scrolled row at most scroll offsets. The early return above only catches a card
+        // that's ENTIRELY above visibleTop, so without this scissor the straddling card would
+        // draw its full height, painting over the tab row/search field above the grid (cards are
+        // added to the widget list after tabs/search, so they'd draw on top). Scoping the scissor
+        // to just this widget's own draw calls clips only the portion above visibleTop, without
+        // touching any other widget's render pass.
+        context.enableScissor(getX(), Math.max(getY(), visibleTop), getX() + width, getY() + height);
+
         context.fill(getX(), getY(), getX() + width, getY() + height, Theme.PANEL);
         context.drawBorder(getX(), getY(), width, height, Theme.BORDER);
 
@@ -83,6 +93,8 @@ public class FeatureCard extends ClickableWidget {
         context.fill(toggleLeft, toggleY, getX() + width - 8, toggleY + 14, toggleColor);
         context.drawCenteredTextWithShadow(textRenderer, enabled ? "켬" : "끔",
             (toggleLeft + getX() + width - 8) / 2, toggleY + 3, enabled ? Theme.GROUND : Theme.MUTED);
+
+        context.disableScissor();
     }
 
     /**
