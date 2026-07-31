@@ -41,11 +41,15 @@ public class ResourcePackDisplay implements PositionedHudFeature {
             ctx.drawTextWithShadow(client.textRenderer, text, x, y, Theme.TEXT));
     }
 
-    // 바닐라 기본 팩("vanilla")은 항상 켜져 있어 목록에 포함되지만, 사용자 입장에서는 "리소스팩을
-    // 적용 중"이라 여기지 않으므로 표시에서 제외한다.
+    // 바닐라 기본 팩과 Fabric이 모드마다 자동 등록하는 합성 리소스팩(예: "Fabric Mod
+    // \"Fabric API\"")은 전부 pinned(사용자가 껐다 켰다 할 수 없는, 항상 켜진 팩)로 잡힌다.
+    // id만으로 "vanilla"를 걸러내던 예전 필터는 이 자동 등록 팩들을 놓쳐서, 리소스팩을 하나도
+    // 안 넣은 상태에서도 로드된 Fabric 모드 전부가 "리소스팩"처럼 나열되는 버그가 있었다
+    // (실기기 테스트로 발견). isPinned()로 걸러내면 실제 사용자가 resourcepacks 폴더에 넣고
+    // 켠 팩만 남는다.
     private static List<String> enabledDisplayNames(Collection<ResourcePackProfile> enabled) {
         return enabled.stream()
-            .filter(profile -> !"vanilla".equals(profile.getId()))
+            .filter(profile -> !profile.isPinned() && !"vanilla".equals(profile.getId()))
             .map(profile -> profile.getDisplayName().getString())
             .toList();
     }
