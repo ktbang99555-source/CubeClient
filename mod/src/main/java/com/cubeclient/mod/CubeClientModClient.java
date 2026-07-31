@@ -10,6 +10,7 @@ import com.cubeclient.mod.features.PerformanceDisplay;
 import com.cubeclient.mod.features.PingDisplay;
 import com.cubeclient.mod.features.ResourcePackDisplay;
 import com.cubeclient.mod.features.SpeedDisplay;
+import com.cubeclient.mod.features.ToggleSprint;
 import com.cubeclient.mod.gui.ClientSettingsButton;
 import com.cubeclient.mod.registry.FeatureRegistry;
 import com.cubeclient.mod.registry.PositionedHudFeature;
@@ -37,6 +38,7 @@ public class CubeClientModClient implements ClientModInitializer {
         registry.register(new DurabilityDisplay());
         registry.register(new PingDisplay());
         registry.register(new ComboCounter());
+        registry.register(new ToggleSprint(cachedConfig));
 
         ClientSettingsButton.register(registry, cachedConfig);
 
