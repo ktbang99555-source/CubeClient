@@ -15,9 +15,10 @@ repositories {
 }
 
 loom {
-    // No mixins in this mod — every hook it needs is a public Fabric API event, so the
-    // default mixin refmap machinery is unused weight. Left at Loom's default (nothing
-    // declared) rather than explicitly disabled, since there is nothing to disable.
+    // 이 모드는 믹신을 딱 하나 쓴다 — GameRendererMixin(진짜 8배 줌). 나머지 훅은 전부 공개
+    // Fabric API 이벤트다. 믹신 컴파일과 refmap 생성은 fabric.mod.json의 "mixins" 항목이
+    // cubeclient.mixins.json을 가리키는 것만으로 Loom이 자동 처리하므로, 여기에 따로 선언할
+    // 설정은 없다 — 그래서 블록은 비어 있다.
 }
 
 dependencies {

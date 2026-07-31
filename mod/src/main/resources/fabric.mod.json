@@ -11,6 +11,9 @@
     "main": ["com.cubeclient.mod.CubeClientMod"],
     "client": ["com.cubeclient.mod.CubeClientModClient"]
   },
+  "mixins": [
+    "cubeclient.mixins.json"
+  ],
   "depends": {
     "fabricloader": ">=0.16.0",
     "minecraft": "1.21.4",

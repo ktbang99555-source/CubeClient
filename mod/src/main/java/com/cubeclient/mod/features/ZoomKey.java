@@ -1,6 +1,7 @@
 package com.cubeclient.mod.features;
 
 import com.cubeclient.mod.config.CachedConfig;
+import com.cubeclient.mod.mixin.ZoomFovState;
 import com.cubeclient.mod.registry.Category;
 import com.cubeclient.mod.registry.Feature;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -20,6 +21,9 @@ public class ZoomKey implements Feature {
     // 프레임 드랍(창 최소화, 로딩 스파이크 등)으로 델타가 과하게 커지는 순간을 대비한 상한 —
     // 없으면 그 한 프레임에 배율이 훌쩍 뛰어버릴 수 있다.
     private static final double MAX_DELTA_SECONDS = 0.1;
+    // 이제 FOV는 바닐라 옵션(30~110 클램프)을 거치지 않고 믹신으로 직접 렌더 값에 꽂히므로,
+    // 0이나 음수 같은 병적인 값이 들어가지 않도록 여기서 최소한의 바닥만 지킨다.
+    private static final float MIN_RENDER_FOV = 1.0f;
 
     private final CachedConfig cachedConfig;
     private final LongSupplier clockMillis;
@@ -93,10 +97,17 @@ public class ZoomKey implements Feature {
         progress += keyDown ? step : -step;
         progress = Math.max(0.0, Math.min(1.0, progress));
 
-        client.options.getFov().setValue((int) Math.round(lerp(originalFov, ZOOM_FACTOR, progress)));
-        client.options.getMouseSensitivity().setValue(lerp(originalSensitivity, ZOOM_FACTOR, progress));
+        // FOV는 옵션이 아니라 믹신 경로로만 나간다 — client.options.getFov()는 읽기만 하고
+        // 절대 쓰지 않는다(바닐라 클램프 30 때문에 8배 줌이 중간에 끊겼던 원인).
+        double targetFov = originalFov / ZOOM_FACTOR;
+        double currentFov = lerp(originalFov, targetFov, progress);
+        ZoomFovState.set((float) Math.max(MIN_RENDER_FOV, currentFov));
+
+        double targetSensitivity = originalSensitivity / ZOOM_FACTOR;
+        client.options.getMouseSensitivity().setValue(lerp(originalSensitivity, targetSensitivity, progress));
 
         if (!keyDown && progress <= 0.0) {
+            ZoomFovState.clear();
             zooming = false; // 완전히 원래 상태로 돌아왔으니 더 이상 매 프레임 옵션을 건드리지 않는다
         }
     }
@@ -111,15 +122,14 @@ public class ZoomKey implements Feature {
         if (!zooming) {
             return;
         }
-        client.options.getFov().setValue(originalFov);
+        ZoomFovState.clear();
         client.options.getMouseSensitivity().setValue(originalSensitivity);
         zooming = false;
         progress = 0.0;
     }
 
-    /** original에서 시작해 original/factor를 향해 progress(0~1)만큼 선형 보간한다. */
-    static double lerp(double original, double factor, double progress) {
-        double target = original / factor;
+    /** original에서 시작해 target을 향해 progress(0~1)만큼 선형 보간한다. */
+    static double lerp(double original, double target, double progress) {
         return original - (original - target) * progress;
     }
 
