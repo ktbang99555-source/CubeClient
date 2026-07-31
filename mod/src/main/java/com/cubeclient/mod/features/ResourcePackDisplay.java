@@ -42,14 +42,18 @@ public class ResourcePackDisplay implements PositionedHudFeature {
     }
 
     // 바닐라 기본 팩과 Fabric이 모드마다 자동 등록하는 합성 리소스팩(예: "Fabric Mod
-    // \"Fabric API\"")은 전부 pinned(사용자가 껐다 켰다 할 수 없는, 항상 켜진 팩)로 잡힌다.
+    // \"Fabric API\"")은 전부 required=true로 등록된다(사용자가 껐다 켰다 할 수 없는 팩이라는
+    // 뜻 — Fabric 언어팩의 "Cannot enable or disable Fabric internal pack..." 메시지와 일치).
+    // 반면 resourcepacks 폴더에서 스캔되는 실제 사용자 리소스팩은 required=false다.
     // id만으로 "vanilla"를 걸러내던 예전 필터는 이 자동 등록 팩들을 놓쳐서, 리소스팩을 하나도
     // 안 넣은 상태에서도 로드된 Fabric 모드 전부가 "리소스팩"처럼 나열되는 버그가 있었다
-    // (실기기 테스트로 발견). isPinned()로 걸러내면 실제 사용자가 resourcepacks 폴더에 넣고
-    // 켠 팩만 남는다.
+    // (실기기 테스트로 발견). 처음 시도한 수정은 isPinned()(=fixedPosition, 목록 순서 고정
+    // 여부를 나타내는 별개의 필드)를 썼는데, Fabric 모드 팩과 실제 사용자 팩 둘 다
+    // fixedPosition=false로 등록되어 있어 전혀 구분이 안 됐다(바이트코드 디스어셈블로 확인).
+    // required(=isRequired())를 써야 두 그룹이 실제로 구분된다.
     private static List<String> enabledDisplayNames(Collection<ResourcePackProfile> enabled) {
         return enabled.stream()
-            .filter(profile -> !profile.isPinned() && !"vanilla".equals(profile.getId()))
+            .filter(profile -> !profile.isRequired() && !"vanilla".equals(profile.getId()))
             .map(profile -> profile.getDisplayName().getString())
             .toList();
     }
