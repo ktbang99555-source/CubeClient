@@ -67,7 +67,7 @@ public class SpeedDisplay implements PositionedHudFeature {
     public void render(DrawContext context, HudPosition pos) {
         MinecraftClient client = MinecraftClient.getInstance();
         String text = String.format("%.1f m/s", currentSpeed);
-        HudRenderUtil.drawScaledText(context, pos, (ctx, x, y) ->
+        HudRenderUtil.drawScaled(context, pos, (ctx, x, y) ->
             ctx.drawTextWithShadow(client.textRenderer, text, x, y, Theme.TEXT));
     }
 }

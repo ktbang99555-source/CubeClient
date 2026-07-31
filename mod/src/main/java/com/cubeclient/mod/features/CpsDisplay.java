@@ -84,7 +84,7 @@ public class CpsDisplay implements PositionedHudFeature {
         attackKeyWasDown = isDown;
 
         String text = currentCps() + " CPS";
-        HudRenderUtil.drawScaledText(context, pos, (ctx, x, y) ->
+        HudRenderUtil.drawScaled(context, pos, (ctx, x, y) ->
             ctx.drawTextWithShadow(client.textRenderer, text, x, y, Theme.TEXT));
     }
 }

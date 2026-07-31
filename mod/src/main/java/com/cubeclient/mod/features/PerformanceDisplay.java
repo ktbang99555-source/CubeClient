@@ -69,7 +69,7 @@ public class PerformanceDisplay implements PositionedHudFeature {
     public void render(DrawContext context, HudPosition pos) {
         MinecraftClient client = MinecraftClient.getInstance();
         String text = formatLine(cachedCpuLoad, cachedUsedMemory, cachedMaxMemory);
-        HudRenderUtil.drawScaledText(context, pos, (ctx, x, y) ->
+        HudRenderUtil.drawScaled(context, pos, (ctx, x, y) ->
             ctx.drawTextWithShadow(client.textRenderer, text, x, y, Theme.TEXT));
     }
 
