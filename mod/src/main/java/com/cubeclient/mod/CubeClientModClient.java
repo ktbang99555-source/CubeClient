@@ -2,6 +2,7 @@ package com.cubeclient.mod;
 
 import com.cubeclient.mod.config.CachedConfig;
 import com.cubeclient.mod.config.ConfigStore;
+import com.cubeclient.mod.features.ComboCounter;
 import com.cubeclient.mod.features.CpsDisplay;
 import com.cubeclient.mod.features.DurabilityDisplay;
 import com.cubeclient.mod.features.FpsDisplay;
@@ -35,6 +36,7 @@ public class CubeClientModClient implements ClientModInitializer {
         registry.register(new ResourcePackDisplay());
         registry.register(new DurabilityDisplay());
         registry.register(new PingDisplay());
+        registry.register(new ComboCounter());
 
         ClientSettingsButton.register(registry, cachedConfig);
 
