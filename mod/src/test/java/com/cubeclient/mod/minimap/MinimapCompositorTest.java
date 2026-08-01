@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class MinimapCompositorTest {
@@ -36,5 +37,18 @@ class MinimapCompositorTest {
         assertEquals(1109, pixels[1]); // px=1,py=0 -> blockX=1,  blockZ=-1
         assertEquals(911, pixels[2]);  // px=0,py=1 -> blockX=-1, blockZ=1
         assertEquals(1111, pixels[3]); // px=1,py=1 -> blockX=1,  blockZ=1
+    }
+
+    @Test
+    void samePixelGridBucketProducesIdenticalOutputRegardlessOfSubBlockMovement() {
+        // textureSize=2, radiusBlocks=2.0 -> blocksPerPixel=2.0. 0.0과 1.9는 같은 [0.0, 2.0)
+        // 스냅 구간에 들어가므로, 그 사이 아무리 미세하게 움직여도 합성 결과가 완전히 같아야
+        // 한다 — 안 그러면 픽셀마다 다른 시점에 값이 바뀌어 깜빡이는 노이즈가 생긴다
+        // (실기기 피드백: "자글자글한 느낌").
+        MinimapCompositor.ColumnColorLookup lookup = (bx, bz) -> (bx << 8) | (bz & 0xFF);
+        int[] a = MinimapCompositor.composite(2, 2.0, 0.0, 0.0, lookup);
+        int[] b = MinimapCompositor.composite(2, 2.0, 1.9, 1.9, lookup);
+
+        assertArrayEquals(a, b);
     }
 }

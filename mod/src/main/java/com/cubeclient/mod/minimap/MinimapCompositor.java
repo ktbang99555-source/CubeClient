@@ -21,6 +21,13 @@ public final class MinimapCompositor {
         double half = textureSize / 2.0;
         double blocksPerPixel = radiusBlocks / half;
 
+        // 플레이어의 소수점 좌표를 그대로 쓰면, 픽셀마다 dxBlocks가 blocksPerPixel의 서로 다른
+        // 배수라서 각자 다른 순간에 옆 블록으로 넘어가 깜빡이는 노이즈가 생긴다(실기기 피드백:
+        // "자글자글한 느낌"). blocksPerPixel 격자에 스냅하면 스냅된 기준점이 한 픽셀만큼
+        // 움직일 때만 바뀌고, 그 순간엔 모든 픽셀이 동시에 밀려서 매끄럽게 스크롤한다.
+        double snappedPlayerX = Math.floor(playerX / blocksPerPixel) * blocksPerPixel;
+        double snappedPlayerZ = Math.floor(playerZ / blocksPerPixel) * blocksPerPixel;
+
         for (int py = 0; py < textureSize; py++) {
             double dzBlocks = (py + 0.5 - half) * blocksPerPixel;
             for (int px = 0; px < textureSize; px++) {
@@ -32,8 +39,8 @@ public final class MinimapCompositor {
                     continue;
                 }
 
-                int blockX = (int) Math.floor(playerX + dxBlocks);
-                int blockZ = (int) Math.floor(playerZ + dzBlocks);
+                int blockX = (int) Math.floor(snappedPlayerX + dxBlocks);
+                int blockZ = (int) Math.floor(snappedPlayerZ + dzBlocks);
                 pixels[index] = lookup.colorAt(blockX, blockZ);
             }
         }
