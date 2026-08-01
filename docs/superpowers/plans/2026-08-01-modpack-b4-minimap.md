@@ -1356,3 +1356,123 @@ git commit -m "Fix ChunkColorSampler: skip MapColor.CLEAR blocks (decorative pla
 - [ ] **Step 4: 재빌드·재배포 후 실기기 재확인**
 
 Task 7과 같은 방식으로 빌드해서 두 인스턴스 `mods/`에 배포하고, 이전에 검게 보이던 지점(꽃밭·잔디·눈밭 등)이 이제 정상 색으로 보이는지 확인한다.
+
+---
+
+### Task 10: `MinimapCompositor` 픽셀 떨림(자글자글함) 수정 — 실기기 검증 후 추가된 태스크
+
+**배경**: Task 9 이후 사용자가 "캐릭터가 움직일 때마다 픽셀이 움직이면서 자글자글한 느낌이 나서 가시성이 떨어진다"고 보고했다. 원인: 텍스처 한 칸(픽셀)이 `blocksPerPixel = radiusBlocks/half = 96/64 = 1.5`블록을 나타내는데, `composite()`가 매 틱 플레이어의 실제 소수점 좌표(`playerX`/`playerZ`)를 그대로 기준점으로 써서 `blockX = floor(playerX + dxBlocks)`를 계산한다. 플레이어가 아주 조금만 움직여도 이 값이 바뀌는데, 픽셀마다 `dxBlocks`가 `blocksPerPixel`의 서로 다른 배수라서 **각 픽셀이 서로 다른 타이밍에** 옆 블록으로 넘어간다 — 그 결과 이미지 전체가 한 번에 밀리는 대신 픽셀들이 제각각 깜빡이는 것처럼 보인다(전형적인 앨리어싱/스크린도어 노이즈).
+
+**고치는 방법**: 플레이어 좌표를 `blocksPerPixel` 격자에 스냅(내림)한 뒤 그 스냅된 값을 기준점으로 쓴다. 이러면 스냅된 기준점이 `blocksPerPixel`만큼 움직일 때만(즉 딱 한 픽셀만큼 이동할 때만) 바뀌고, 그 순간엔 **모든 픽셀이 동시에** 한 칸씩 밀리므로 개별 픽셀 깜빡임이 사라지고 전체 이미지가 매끄럽게 스크롤하는 것처럼 보인다.
+
+**Files:**
+- Modify: `mod/src/main/java/com/cubeclient/mod/minimap/MinimapCompositor.java`
+- Modify: `mod/src/test/java/com/cubeclient/mod/minimap/MinimapCompositorTest.java`(스냅 동작을 증명하는 테스트 추가, 기존 2개는 그대로 유지 — 기존 테스트의 입력값은 이미 `blocksPerPixel`의 배수라 스냅해도 결과가 안 바뀐다)
+
+**Interfaces:**
+- Consumes: 없음(기존 그대로).
+- Produces: `composite(int, double, double, double, ColumnColorLookup) -> int[]` 시그니처 변경 없음 — 내부에서 좌표를 스냅하는 로직만 추가된다. Task 6의 `TerrainMinimap`은 코드 수정 없이 이 수정의 효과를 그대로 받는다(이미 이 메서드를 호출하고 있으므로).
+
+- [ ] **Step 1: 실패하는 테스트 추가**
+
+`mod/src/test/java/com/cubeclient/mod/minimap/MinimapCompositorTest.java`의 기존 두 테스트는 그대로 두고, 아래 테스트를 추가:
+
+```java
+    @Test
+    void samePixelGridBucketProducesIdenticalOutputRegardlessOfSubBlockMovement() {
+        // textureSize=2, radiusBlocks=2.0 -> blocksPerPixel=2.0. 0.0과 1.9는 같은 [0.0, 2.0)
+        // 스냅 구간에 들어가므로, 그 사이 아무리 미세하게 움직여도 합성 결과가 완전히 같아야
+        // 한다 — 안 그러면 픽셀마다 다른 시점에 값이 바뀌어 깜빡이는 노이즈가 생긴다
+        // (실기기 피드백: "자글자글한 느낌").
+        MinimapCompositor.ColumnColorLookup lookup = (bx, bz) -> (bx << 8) | (bz & 0xFF);
+        int[] a = MinimapCompositor.composite(2, 2.0, 0.0, 0.0, lookup);
+        int[] b = MinimapCompositor.composite(2, 2.0, 1.9, 1.9, lookup);
+
+        assertArrayEquals(a, b);
+    }
+```
+
+파일 맨 위 import에 `import static org.junit.jupiter.api.Assertions.assertArrayEquals;` 추가.
+
+- [ ] **Step 2: 테스트 실패 확인**
+
+Run (`mod/` 디렉터리에서):
+```bash
+JAVA_HOME="C:/Users/Skdji/devtools/jdk21/jdk-21.0.11+10" ./gradlew.bat test --tests "com.cubeclient.mod.minimap.MinimapCompositorTest"
+```
+Expected: FAIL — 새 테스트만 실패(스냅 전이라 `composite(2,2.0,0.0,0.0,...)`와 `composite(2,2.0,1.9,1.9,...)`가 다른 값을 냄), 기존 2개는 여전히 통과.
+
+- [ ] **Step 3: 구현 수정**
+
+`mod/src/main/java/com/cubeclient/mod/minimap/MinimapCompositor.java`를 아래로 교체:
+
+```java
+// mod/src/main/java/com/cubeclient/mod/minimap/MinimapCompositor.java
+package com.cubeclient.mod.minimap;
+
+/** 캐시된 청크 색상 데이터를 플레이어 중심 원형 이미지로 합성한다. Minecraft 객체에 의존하지
+ * 않는다 — 실제 색상 조회는 ColumnColorLookup을 통해 주입받는다(MinimapChunkCache가 구현). */
+public final class MinimapCompositor {
+    private MinimapCompositor() {}
+
+    @FunctionalInterface
+    public interface ColumnColorLookup {
+        /** blockX, blockZ 컬럼의 ARGB 색상. 아직 캐시되지 않은 청크는 0(완전 투명)을 반환해야 한다. */
+        int colorAt(int blockX, int blockZ);
+    }
+
+    /** textureSize x textureSize 픽셀의 ARGB 배열(row-major, index = py*textureSize+px)을 만든다.
+     * radiusBlocks는 실제 블록 단위 반경 — textureSize와 별개라서, 같은 반경을 더 크거나 작은
+     * 텍스처로 렌더링할 수 있다(HUD 편집기의 배율 조절이 이걸 이용한다). 반경 밖 픽셀은 0. */
+    public static int[] composite(int textureSize, double radiusBlocks, double playerX, double playerZ,
+                                   ColumnColorLookup lookup) {
+        int[] pixels = new int[textureSize * textureSize];
+        double half = textureSize / 2.0;
+        double blocksPerPixel = radiusBlocks / half;
+
+        // 플레이어의 소수점 좌표를 그대로 쓰면, 픽셀마다 dxBlocks가 blocksPerPixel의 서로 다른
+        // 배수라서 각자 다른 순간에 옆 블록으로 넘어가 깜빡이는 노이즈가 생긴다(실기기 피드백:
+        // "자글자글한 느낌"). blocksPerPixel 격자에 스냅하면 스냅된 기준점이 한 픽셀만큼
+        // 움직일 때만 바뀌고, 그 순간엔 모든 픽셀이 동시에 밀려서 매끄럽게 스크롤한다.
+        double snappedPlayerX = Math.floor(playerX / blocksPerPixel) * blocksPerPixel;
+        double snappedPlayerZ = Math.floor(playerZ / blocksPerPixel) * blocksPerPixel;
+
+        for (int py = 0; py < textureSize; py++) {
+            double dzBlocks = (py + 0.5 - half) * blocksPerPixel;
+            for (int px = 0; px < textureSize; px++) {
+                double dxBlocks = (px + 0.5 - half) * blocksPerPixel;
+                int index = py * textureSize + px;
+
+                if (!MinimapMath.isColumnWithinRadius(dxBlocks, dzBlocks, radiusBlocks)) {
+                    pixels[index] = 0;
+                    continue;
+                }
+
+                int blockX = (int) Math.floor(snappedPlayerX + dxBlocks);
+                int blockZ = (int) Math.floor(snappedPlayerZ + dzBlocks);
+                pixels[index] = lookup.colorAt(blockX, blockZ);
+            }
+        }
+        return pixels;
+    }
+}
+```
+
+- [ ] **Step 4: 테스트 통과 확인**
+
+Run:
+```bash
+JAVA_HOME="C:/Users/Skdji/devtools/jdk21/jdk-21.0.11+10" ./gradlew.bat test --tests "com.cubeclient.mod.minimap.MinimapCompositorTest"
+```
+Expected: PASS, 3개 테스트 전부(기존 2개 + 새 스냅 테스트). 기존 두 테스트가 여전히 통과하는 이유: 두 테스트 모두 입력 좌표(100.0/200.0, 0.0/0.0)가 이미 각자의 `blocksPerPixel`(1.0, 2.0)의 배수라서 스냅해도 값이 안 바뀐다.
+
+- [ ] **Step 5: 커밋**
+
+```bash
+git add mod/src/main/java/com/cubeclient/mod/minimap/MinimapCompositor.java mod/src/test/java/com/cubeclient/mod/minimap/MinimapCompositorTest.java
+git commit -m "Fix MinimapCompositor: snap player position to the pixel grid to eliminate per-pixel scroll jitter"
+```
+
+- [ ] **Step 6: 재빌드·재배포 후 실기기 재확인**
+
+Task 7과 같은 방식으로 빌드해서 두 인스턴스 `mods/`에 배포하고, 이동 중 지형이 픽셀 단위로 매끄럽게 스크롤하는지(개별 픽셀이 따로 깜빡이지 않는지) 확인한다.
