@@ -95,15 +95,15 @@ public class HudEditorScreen extends Screen {
     }
 
     /**
-     * 오버레이 사각형의 화면 좌표. 실제 기능 렌더링 크기를 다시 계산하지 않고 고정 크기로
-     * 근사한다 — 각 기능의 실제 렌더 폭을 재려면 기능마다 measureWidth() 같은 메서드가
-     * 필요해지는데, B1 범위에서는 카드 하나당 텍스트 한 줄이라 고정 크기 근사로 충분하다.
+     * 오버레이 사각형의 화면 좌표. 각 기능이 스스로 밝히는 renderedWidth()/renderedHeight()
+     * (기본값 80x12, PositionedHudFeature 참고)에 배율을 곱해 근사한다 — 미니맵처럼 크기가
+     * 크게 다른 요소는 그 기능이 직접 재정의해서 정확한 히트박스를 제공한다.
      */
     private Bounds boundsOf(Entry entry) {
         int x = (int) (entry.position.xRatio() * width) - OVERLAY_MARGIN;
         int y = (int) (entry.position.yRatio() * height) - OVERLAY_MARGIN;
-        int w = (int) (80 * entry.position.scale()) + OVERLAY_MARGIN * 2;
-        int h = (int) (12 * entry.position.scale()) + OVERLAY_MARGIN * 2;
+        int w = (int) (entry.feature.renderedWidth() * entry.position.scale()) + OVERLAY_MARGIN * 2;
+        int h = (int) (entry.feature.renderedHeight() * entry.position.scale()) + OVERLAY_MARGIN * 2;
         return new Bounds(x, y, w, h);
     }
 

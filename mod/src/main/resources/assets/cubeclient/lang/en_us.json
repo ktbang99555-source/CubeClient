@@ -1,4 +1,5 @@
 {
   "key.categories.cubeclient": "CubeClient",
+  "key.cubeclient.minimap": "Minimap",
   "key.cubeclient.zoom": "Zoom"
 }

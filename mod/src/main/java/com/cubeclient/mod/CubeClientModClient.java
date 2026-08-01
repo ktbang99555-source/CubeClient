@@ -10,6 +10,7 @@ import com.cubeclient.mod.features.PerformanceDisplay;
 import com.cubeclient.mod.features.PingDisplay;
 import com.cubeclient.mod.features.ResourcePackDisplay;
 import com.cubeclient.mod.features.SpeedDisplay;
+import com.cubeclient.mod.features.TerrainMinimap;
 import com.cubeclient.mod.features.ToggleSprint;
 import com.cubeclient.mod.features.ZoomKey;
 import com.cubeclient.mod.gui.ClientSettingsButton;
@@ -41,6 +42,7 @@ public class CubeClientModClient implements ClientModInitializer {
         registry.register(new ComboCounter());
         registry.register(new ToggleSprint(cachedConfig));
         registry.register(new ZoomKey(cachedConfig));
+        registry.register(new TerrainMinimap(cachedConfig));
 
         ClientSettingsButton.register(registry, cachedConfig);
 
