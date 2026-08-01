@@ -76,6 +76,28 @@ public class TerrainMinimap implements PositionedHudFeature {
         Set<ChunkCoord> needed = new HashSet<>(
             MinimapMath.chunksInRadius(client.player.getX(), client.player.getZ(), RADIUS_BLOCKS));
         chunkCache.tick(client.world, client.world.getRegistryKey(), needed);
+
+        // 지형 합성(16,384픽셀 루프)과 텍스처 업로드는 매 프레임(초당 60~200+회)이 아니라
+        // 여기, 고정 20Hz 틱에서만 한다 — "매 프레임/매 틱 무거운 작업 금지" 원칙은
+        // MinimapChunkCache의 틱당 청크 1개 예산뿐 아니라 이 합성 단계에도 똑같이 적용된다.
+        // render()는 여기서 만든 텍스처를 그대로 그리기만 한다.
+        if (texture == null) {
+            texture = new NativeImageBackedTexture(TEXTURE_SIZE, TEXTURE_SIZE, true);
+            client.getTextureManager().registerTexture(TEXTURE_ID, texture);
+        }
+
+        double playerX = client.player.getX();
+        double playerZ = client.player.getZ();
+        int[] pixels = MinimapCompositor.composite(TEXTURE_SIZE, RADIUS_BLOCKS, playerX, playerZ, chunkCache);
+        stampArrow(pixels, client.player.getYaw());
+
+        NativeImage image = texture.getImage();
+        for (int py = 0; py < TEXTURE_SIZE; py++) {
+            for (int px = 0; px < TEXTURE_SIZE; px++) {
+                image.setColorArgb(px, py, pixels[py * TEXTURE_SIZE + px]);
+            }
+        }
+        texture.upload();
     }
 
     // 모드 목록 화면의 체크박스(ModListScreen.onToggle)와 정확히 같은 read-modify-write
@@ -97,27 +119,14 @@ public class TerrainMinimap implements PositionedHudFeature {
     @Override
     public void render(DrawContext context, HudPosition pos) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) {
+        // texture == null 방어는 첫 틱이 아직 안 돈 순간(월드 로딩 직후 첫 프레임 등)을 대비한
+        // 것 — onTick()이 텍스처를 만들고 채우기 전까지는 그릴 게 없다.
+        if (client.player == null || client.world == null || texture == null) {
             return;
-        }
-        if (texture == null) {
-            texture = new NativeImageBackedTexture(TEXTURE_SIZE, TEXTURE_SIZE, true);
-            client.getTextureManager().registerTexture(TEXTURE_ID, texture);
         }
 
         double playerX = client.player.getX();
         double playerZ = client.player.getZ();
-        int[] pixels = MinimapCompositor.composite(TEXTURE_SIZE, RADIUS_BLOCKS, playerX, playerZ, chunkCache);
-        stampArrow(pixels, client.player.getYaw());
-
-        NativeImage image = texture.getImage();
-        for (int py = 0; py < TEXTURE_SIZE; py++) {
-            for (int px = 0; px < TEXTURE_SIZE; px++) {
-                image.setColorArgb(px, py, pixels[py * TEXTURE_SIZE + px]);
-            }
-        }
-        texture.upload();
-
         HudRenderUtil.drawScaled(context, pos, (ctx, x, y) -> {
             ctx.drawTexture(RenderLayer::getGuiTextured, TEXTURE_ID,
                 x, y, 0f, 0f, TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE);
