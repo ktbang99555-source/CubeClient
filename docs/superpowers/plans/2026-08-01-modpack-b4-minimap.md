@@ -1255,3 +1255,104 @@ git commit -m "Add height-based brightness shading to ChunkColorSampler for visu
 - [ ] **Step 4: 재빌드·재배포 후 실기기 재확인**
 
 Task 7과 같은 방식으로 빌드해서 두 인스턴스 `mods/`에 배포하고, 지형이 이전보다 입체감 있게(굴곡이 도드라지게) 보이는지 확인한다.
+
+---
+
+### Task 9: `ChunkColorSampler`의 검은 구멍 버그 수정 — 실기기 검증 후 추가된 태스크
+
+**배경**: Task 8 이후 사용자가 스크린샷으로 미니맵 일부가 "아무리 왔다갔다 해도 계속 검은색"인 지점을 보고했다. 원인을 `javap`로 확인: `MapColor.CLEAR`(장식용 블록 — 꽃, 잔디, 눈 쌓임 등에 쓰이는 "색 없음" 지도색)의 원본 색상값 자체가 `new MapColor(0, 0)` — 즉 raw color가 **0(검정)**이다. `Heightmap.Type.WORLD_SURFACE`가 잡는 "맨 위 블록"은 공기만 아니면 되므로, 잔디밭·꽃밭·눈 쌓인 땅처럼 장식 블록이 진짜 지형 위에 얹혀 있는 곳에서는 그 장식 블록이 "맨 위"로 잡히고, 그 블록의 `MapColor.CLEAR`를 그대로 그려서 **투명(데이터 없음)이 아니라 불투명 검정**이 칠해진다 — `& 0x00FFFFFF | 0xFF000000`가 CLEAR의 raw color 0에 강제로 알파 0xFF를 씌우기 때문. 그 지점은 실제로 늘 같은 장식 블록이 덮여 있으니, 아무리 움직여도 계속 검게 남는다(청크가 아직 캐시 안 된 경우의 "일시적 투명"과는 다른, 영구적인 버그).
+
+**Files:**
+- Modify: `mod/src/main/java/com/cubeclient/mod/minimap/ChunkColorSampler.java`
+
+**Interfaces:**
+- Consumes: 없음(기존 시그니처 그대로).
+- Produces: `sampleChunk(World, ChunkPos) -> int[]` 시그니처 변경 없음 — 내부 최상단 블록 탐색 로직만 바뀐다.
+
+**검증된 API**: `net.minecraft.world.HeightLimitView.getBottomY() -> int`(`World`가 상속, `javap`로 확인) — 아래로 내려가는 탐색의 바닥 한계로 쓴다. `MapColor.CLEAR`는 `net.minecraft.block.MapColor`의 `public static final` 필드(이미 이 계획에서 검증됨).
+
+- [ ] **Step 1: 구현 수정**
+
+`mod/src/main/java/com/cubeclient/mod/minimap/ChunkColorSampler.java`를 아래로 교체:
+
+```java
+package com.cubeclient.mod.minimap;
+
+import net.minecraft.block.BlockState;
+import net.minecraft.block.MapColor;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
+import net.minecraft.world.Heightmap;
+import net.minecraft.world.World;
+
+/** 청크 하나의 16x16 컬럼을 훑어 지표면 최상단 블록의 지도 색을 뽑는다. 동굴(지하) 레이어는
+ * 안 본다 — 바닐라 지도 아이템과 동일하게 WORLD_SURFACE 하이트맵만 쓴다. 인접한 칸(북쪽,
+ * blockZ-1)과의 높이 차이로 밝기(LOW/NORMAL/HIGH)를 다르게 줘서 굴곡 음영을 낸다. */
+public final class ChunkColorSampler {
+    private ChunkColorSampler() {}
+
+    // WORLD_SURFACE가 잡는 "맨 위 블록"은 꽃·잔디·눈 쌓임 같은 장식 블록도 포함하는데, 이런
+    // 블록의 지도색은 MapColor.CLEAR(원본 색상값 0=검정)라 그대로 쓰면 검은 구멍이 생긴다.
+    // 색 있는 블록이 나올 때까지 최대 이만큼만 아래로 내려간다(무한정 파면 청크 하나 처리
+    // 비용이 너무 커진다 — 실기기에서 검은 구멍 버그로 발견됨).
+    private static final int MAX_CLEAR_SKIP = 24;
+
+    public static int[] sampleChunk(World world, ChunkPos chunkPos) {
+        int[] colors = new int[16 * 16];
+        for (int localZ = 0; localZ < 16; localZ++) {
+            for (int localX = 0; localX < 16; localX++) {
+                int blockX = chunkPos.getStartX() + localX;
+                int blockZ = chunkPos.getStartZ() + localZ;
+                int topY = findColoredTopY(world, blockX, blockZ);
+                int northTopY = findColoredTopY(world, blockX, blockZ - 1);
+
+                BlockPos pos = new BlockPos(blockX, topY, blockZ);
+                BlockState state = world.getBlockState(pos);
+                MapColor mapColor = state.getMapColor(world, pos);
+
+                MapColor.Brightness brightness = topY > northTopY ? MapColor.Brightness.HIGH
+                    : topY < northTopY ? MapColor.Brightness.LOW
+                    : MapColor.Brightness.NORMAL;
+
+                int rgb = mapColor.getRenderColor(brightness) & 0x00FFFFFF;
+                colors[localZ * 16 + localX] = rgb | 0xFF000000;
+            }
+        }
+        return colors;
+    }
+
+    /** 색 있는(CLEAR가 아닌) 블록이 나올 때까지 아래로 내려간다. */
+    private static int findColoredTopY(World world, int blockX, int blockZ) {
+        int y = world.getTopY(Heightmap.Type.WORLD_SURFACE, blockX, blockZ) - 1;
+        int floor = Math.max(world.getBottomY(), y - MAX_CLEAR_SKIP);
+        while (y > floor) {
+            BlockPos pos = new BlockPos(blockX, y, blockZ);
+            MapColor mapColor = world.getBlockState(pos).getMapColor(world, pos);
+            if (mapColor != MapColor.CLEAR) {
+                return y;
+            }
+            y--;
+        }
+        return y;
+    }
+}
+```
+
+- [ ] **Step 2: 컴파일 확인**
+
+Run (`mod/` 디렉터리에서):
+```bash
+JAVA_HOME="C:/Users/Skdji/devtools/jdk21/jdk-21.0.11+10" ./gradlew.bat compileJava
+```
+Expected: BUILD SUCCESSFUL.
+
+- [ ] **Step 3: 커밋**
+
+```bash
+git add mod/src/main/java/com/cubeclient/mod/minimap/ChunkColorSampler.java
+git commit -m "Fix ChunkColorSampler: skip MapColor.CLEAR blocks (decorative plants/snow) that were rendering as opaque black"
+```
+
+- [ ] **Step 4: 재빌드·재배포 후 실기기 재확인**
+
+Task 7과 같은 방식으로 빌드해서 두 인스턴스 `mods/`에 배포하고, 이전에 검게 보이던 지점(꽃밭·잔디·눈밭 등)이 이제 정상 색으로 보이는지 확인한다.
