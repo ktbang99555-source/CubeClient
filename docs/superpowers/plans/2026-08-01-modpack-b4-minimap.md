@@ -1173,3 +1173,85 @@ git add -A
 git commit -m "Fix issues found during B4 minimap real-device verification"
 ```
 (문제가 없었다면 이 스텝은 생략 — 커밋할 변경사항이 없다.)
+
+---
+
+### Task 8: `ChunkColorSampler`에 높이 음영(relief shading) 추가 — 실기기 검증 후 추가된 태스크
+
+**배경**: Task 7 실기기 검증에서 기능은 전부 정상 동작했지만("잘 된다"), 사용자가 "지도가 표현할 수 있는 색깔을 늘리자, 너무 밍밍해"라고 피드백했다. 원인은 `ChunkColorSampler`가 모든 칸을 `MapColor.Brightness.NORMAL` 고정으로만 그려서다 — 바닐라 지도 아이템이 실제로 다채로워 보이는 건 블록 색 종류가 많아서가 아니라, 인접한 칸끼리 높이 차이에 따라 밝기(LOW/NORMAL/HIGH)를 다르게 줘서 생기는 굴곡 음영 효과다. 이 계획의 "검증된 API 시그니처" 절에 `MapColor.Brightness` enum 상수(`LOWEST`, `LOW`, `NORMAL`, `HIGH`)가 이미 `javap`로 확인돼 있다.
+
+**Files:**
+- Modify: `mod/src/main/java/com/cubeclient/mod/minimap/ChunkColorSampler.java`
+
+**Interfaces:**
+- Consumes: 없음(기존 시그니처 그대로).
+- Produces: `sampleChunk(World, ChunkPos) -> int[]` 시그니처는 변경 없음 — 내부 색상 계산 로직만 바뀐다. 다른 태스크에 영향 없음(테스트 없음, MC 객체 의존).
+
+- [ ] **Step 1: 구현 수정**
+
+`mod/src/main/java/com/cubeclient/mod/minimap/ChunkColorSampler.java`를 아래로 교체:
+
+```java
+package com.cubeclient.mod.minimap;
+
+import net.minecraft.block.BlockState;
+import net.minecraft.block.MapColor;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
+import net.minecraft.world.Heightmap;
+import net.minecraft.world.World;
+
+/** 청크 하나의 16x16 컬럼을 훑어 지표면 최상단 블록의 지도 색을 뽑는다. 동굴(지하) 레이어는
+ * 안 본다 — 바닐라 지도 아이템과 동일하게 WORLD_SURFACE 하이트맵만 쓴다. 인접한 칸(북쪽,
+ * blockZ-1)과의 높이 차이로 밝기(LOW/NORMAL/HIGH)를 다르게 줘서 굴곡 음영을 낸다 — 바닐라
+ * 지도가 실제로 다채로워 보이는 이유가 이 음영이지 블록 색 종류가 아니다(실기기 검증에서
+ * "너무 밍밍하다"는 피드백을 받고 추가됨). */
+public final class ChunkColorSampler {
+    private ChunkColorSampler() {}
+
+    public static int[] sampleChunk(World world, ChunkPos chunkPos) {
+        int[] colors = new int[16 * 16];
+        for (int localZ = 0; localZ < 16; localZ++) {
+            for (int localX = 0; localX < 16; localX++) {
+                int blockX = chunkPos.getStartX() + localX;
+                int blockZ = chunkPos.getStartZ() + localZ;
+                // getTopY는 하이트맵 기준 "그 위 첫 공기 칸"을 돌려주는 것으로 추정 —
+                // 실제 블록은 한 칸 아래.
+                int topY = world.getTopY(Heightmap.Type.WORLD_SURFACE, blockX, blockZ) - 1;
+                int northTopY = world.getTopY(Heightmap.Type.WORLD_SURFACE, blockX, blockZ - 1) - 1;
+
+                BlockPos pos = new BlockPos(blockX, topY, blockZ);
+                BlockState state = world.getBlockState(pos);
+                MapColor mapColor = state.getMapColor(world, pos);
+
+                MapColor.Brightness brightness = topY > northTopY ? MapColor.Brightness.HIGH
+                    : topY < northTopY ? MapColor.Brightness.LOW
+                    : MapColor.Brightness.NORMAL;
+
+                int rgb = mapColor.getRenderColor(brightness) & 0x00FFFFFF;
+                colors[localZ * 16 + localX] = rgb | 0xFF000000;
+            }
+        }
+        return colors;
+    }
+}
+```
+
+- [ ] **Step 2: 컴파일 확인**
+
+Run (`mod/` 디렉터리에서):
+```bash
+JAVA_HOME="C:/Users/Skdji/devtools/jdk21/jdk-21.0.11+10" ./gradlew.bat compileJava
+```
+Expected: BUILD SUCCESSFUL(이 파일엔 원래도 테스트 없음, Task 4와 동일한 이유).
+
+- [ ] **Step 3: 커밋**
+
+```bash
+git add mod/src/main/java/com/cubeclient/mod/minimap/ChunkColorSampler.java
+git commit -m "Add height-based brightness shading to ChunkColorSampler for visual richness"
+```
+
+- [ ] **Step 4: 재빌드·재배포 후 실기기 재확인**
+
+Task 7과 같은 방식으로 빌드해서 두 인스턴스 `mods/`에 배포하고, 지형이 이전보다 입체감 있게(굴곡이 도드라지게) 보이는지 확인한다.
