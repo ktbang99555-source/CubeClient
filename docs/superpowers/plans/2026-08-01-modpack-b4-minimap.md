@@ -1476,3 +1476,620 @@ git commit -m "Fix MinimapCompositor: snap player position to the pixel grid to 
 - [ ] **Step 6: 재빌드·재배포 후 실기기 재확인**
 
 Task 7과 같은 방식으로 빌드해서 두 인스턴스 `mods/`에 배포하고, 이동 중 지형이 픽셀 단위로 매끄럽게 스크롤하는지(개별 픽셀이 따로 깜빡이지 않는지) 확인한다.
+
+---
+
+### Task 11: 최종 전체 브랜치 리뷰(Opus) 발견 사항 일괄 수정
+
+**배경**: Task 1~10 완료 후 전체 브랜치 최종 리뷰를 돌렸다. 개별 태스크 리뷰는 각자 자기 diff만 보므로 못 잡는, 여러 태스크에 걸친 문제 4건(Critical 1 + Important 3)이 나왔다 — SDD 규칙대로 하나로 묶어서 한 번에 고친다.
+
+**Files:**
+- Modify: `mod/src/main/java/com/cubeclient/mod/minimap/MinimapChunkCache.java`
+- Modify: `mod/src/test/java/com/cubeclient/mod/minimap/MinimapChunkCacheTest.java`
+- Modify: `mod/src/main/java/com/cubeclient/mod/minimap/MinimapCompositor.java`
+- Modify: `mod/src/test/java/com/cubeclient/mod/minimap/MinimapCompositorTest.java`
+- Modify: `mod/src/main/java/com/cubeclient/mod/features/TerrainMinimap.java`
+- Modify: `mod/src/main/java/com/cubeclient/mod/gui/HudEditorScreen.java`
+
+**검증된 API**: `net.minecraft.world.WorldAccess.isChunkLoaded(int, int) -> boolean`(`World`가 상속, `javap`로 확인 — public default 메서드).
+
+#### 발견 1 (Critical) — 아직 로드 안 된 청크를 샘플링하면 영구 검은 사각형이 생긴다
+
+로드 안 된 청크에서 `world.getTopY(...)`는 `getBottomY()`를 그대로 돌려주고, 그 자리의 블록은 `VOID_AIR`(지도색 `MapColor.CLEAR`, 원본 색상값 0=검정)라서 Task 9가 고친 것과 똑같은 증상(영구 검은 칸)이 다른 원인으로 재발한다 — 한 번 캐시되면 다시 안 지워지므로 그 청크는 세션 내내 검게 남는다. 스펙의 "범위 밖" 항목("아직 로드 안 된 청크를 강제로 불러오는 것") — 로드 여부 확인 자체를 어느 태스크도 맡지 않았던 게 원인.
+
+#### 발견 2 (Important) — 같은 차원이라도 실제 `World` 인스턴스가 바뀌면(재접속 등) 캐시가 안 지워진다
+
+`MinimapChunkCache`는 `RegistryKey<World>`(차원 종류)만 비교한다. 싱글플레이 월드 A(오버월드) 종료 후 월드 B(마찬가지로 오버월드) 접속, 또는 다른 서버 접속 시 `dimension.equals(lastDimension)`이 그대로 참이라 캐시가 안 비워지고, 월드 A의 지형이 월드 B의 좌표 위에 계속 그려진다.
+
+#### 발견 3 (Important) — 엔티티 점 조회가 여전히 매 프레임(20Hz 아닌 60~200+Hz) 돈다
+
+Task 6 수정 라운드가 지형 합성·업로드는 `onTick()`으로 옮겼지만 엔티티 조회(`getOtherEntities`)와 `ctx.fill` 루프는 `render()`에 그대로 남아 있었다 — 같은 "매 프레임 무거운 작업 금지" 원칙의 예외로 남은 부분. 엔티티 점도 `onTick()`에서 한 번만 계산해 저장해두고 `render()`는 그리기만 하게 고친다. 부수적으로 이렇게 하면 Task 10에서 지형만 스냅한 기준점을 엔티티 점도 같이 쓰게 돼서, 별도로 지적됐던 "지형은 픽셀 단위로 끊겨 움직이는데 점은 매끄럽게 움직여서 어긋나 보이는" 문제도 같이 없어진다.
+
+#### 발견 4 (Important) — HUD 편집기 리사이즈 드래그가 여전히 80을 하드코딩
+
+`HudEditorScreen.boundsOf()`는 Task 6에서 `renderedWidth()`를 쓰도록 고쳤지만, 드래그로 크기를 조절하는 `mouseDragged()`의 배율 계산(`(mouseX - dragStartMouseX) / 80.0`)은 그대로 80이 박혀 있다 — 128짜리 미니맵을 드래그하면 마우스보다 훨씬 빠르게 커지거나 작아진다.
+
+**추가로 같이 처리(사소하지만 비용이 거의 없어서 같은 라운드에 포함, 최종 리뷰가 "어차피 고칠 거면 지금" 권고)**:
+- `displayName()`에 키 힌트 추가 — `ZoomKey`의 `"Zoom (C키)"`와 통일.
+- M키 토글에 `client.currentScreen == null` 가드 추가 — 지금은 바닐라 자체가 화면 열린 동안 키 입력을 안 보내서 사실상 안전하지만(리뷰에서 바이트코드로 확인됨), `ZoomKey.isSafeToZoom`과 같은 이유로 방어적으로 넣어둔다.
+
+**Interfaces:**
+- `MinimapChunkCache`의 패키지 전용 생성자 시그니처가 바뀐다: `(BiFunction<World, ChunkCoord, int[]> sampler)` → `(BiFunction<World, ChunkCoord, int[]> sampler, BiPredicate<World, ChunkCoord> isLoaded)`. 기존 4개 테스트 전부 두 번째 인자(`(world, coord) -> true`)를 추가해야 컴파일된다.
+- `MinimapCompositor.snapToPixelGrid(double coordinate, int textureSize, double radiusBlocks) -> double`가 새로 공개 메서드로 뽑힌다 — `TerrainMinimap`이 지형·엔티티 점 양쪽에 같은 기준점을 쓰려고 가져다 쓴다.
+- World 인스턴스 변경 캐시 무효화(발견 2)는 `World` 객체를 부팅 없이 만들 수 없어 유닛 테스트 대상이 아니다(Task 4/9의 `ChunkColorSampler`와 같은 이유) — 코드 자체는 한 줄 비교라 리뷰로 정확성을 확인하고, 실기기 재확인 항목에 포함시킨다.
+
+- [ ] **Step 1: `MinimapChunkCache` 수정 — 발견 1, 2**
+
+`mod/src/main/java/com/cubeclient/mod/minimap/MinimapChunkCache.java`를 아래로 교체:
+
+```java
+package com.cubeclient.mod.minimap;
+
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.util.math.ChunkPos;
+import net.minecraft.world.World;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.BiFunction;
+import java.util.function.BiPredicate;
+
+/** 청크별 색상 배열을 캐시하고, 매 tick() 호출마다 최대 1개 청크만 새로 샘플링한다(매 프레임
+ * 무거운 작업 금지 원칙). 차원이 바뀌거나(같은 차원이라도) 실제 World 인스턴스가 바뀌면
+ * (재접속, 다른 서버 접속 등) 캐시 전체를 버린다 — 둘 다 완전히 다른 지형이기 때문. 아직
+ * 클라이언트에 로드 안 된 청크는 캐시하지도 예산을 쓰지도 않는다(최종 리뷰에서 발견 — 로드
+ * 전에 샘플링하면 world.getTopY가 getBottomY()를 그대로 돌려주고 그 자리 블록이
+ * MapColor.CLEAR라 영구 검은 칸이 생겼다, Task 9가 고친 것과 같은 증상의 다른 원인). 캐시
+ * 키는 ChunkCoord(순수 값 타입) — 실제 ChunkPos 변환은 기본 샘플러 어댑터 안, 게임이 실제로
+ * 도는 순간에만 일어난다. */
+public class MinimapChunkCache implements MinimapCompositor.ColumnColorLookup {
+    private final BiFunction<World, ChunkCoord, int[]> sampler;
+    private final BiPredicate<World, ChunkCoord> isLoaded;
+    private final Map<ChunkCoord, int[]> colorsByChunk = new HashMap<>();
+    private RegistryKey<World> lastDimension;
+    private World lastWorld;
+
+    public MinimapChunkCache() {
+        this(
+            (world, coord) -> ChunkColorSampler.sampleChunk(world, new ChunkPos(coord.x(), coord.z())),
+            (world, coord) -> world.isChunkLoaded(coord.x(), coord.z())
+        );
+    }
+
+    MinimapChunkCache(BiFunction<World, ChunkCoord, int[]> sampler, BiPredicate<World, ChunkCoord> isLoaded) {
+        this.sampler = sampler;
+        this.isLoaded = isLoaded;
+    }
+
+    public void tick(World world, RegistryKey<World> dimension, Set<ChunkCoord> neededChunks) {
+        if (!dimension.equals(lastDimension) || world != lastWorld) {
+            colorsByChunk.clear();
+            lastDimension = dimension;
+            lastWorld = world;
+        }
+
+        for (ChunkCoord coord : neededChunks) {
+            if (colorsByChunk.containsKey(coord)) {
+                continue;
+            }
+            if (!isLoaded.test(world, coord)) {
+                // 아직 로드 안 됨 — 캐시하지도 예산을 쓰지도 않는다, 나중에 로드되면 그때 다시
+                // 시도할 수 있어야 하므로.
+                continue;
+            }
+            colorsByChunk.put(coord, sampler.apply(world, coord));
+            return;
+        }
+    }
+
+    @Override
+    public int colorAt(int blockX, int blockZ) {
+        ChunkCoord coord = new ChunkCoord(blockX >> 4, blockZ >> 4);
+        int[] chunkColors = colorsByChunk.get(coord);
+        if (chunkColors == null) {
+            return 0;
+        }
+        int localX = blockX & 15;
+        int localZ = blockZ & 15;
+        return chunkColors[localZ * 16 + localX];
+    }
+}
+```
+
+- [ ] **Step 2: `MinimapChunkCacheTest` 수정 — 기존 4개 테스트에 인자 추가 + 새 테스트 2개**
+
+`mod/src/test/java/com/cubeclient/mod/minimap/MinimapChunkCacheTest.java`를 아래로 교체:
+
+```java
+package com.cubeclient.mod.minimap;
+
+import net.minecraft.world.World;
+import org.junit.jupiter.api.Test;
+
+import java.util.LinkedHashSet;
+import java.util.Set;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+class MinimapChunkCacheTest {
+
+    @Test
+    void refreshesAtMostOneChunkPerTick() {
+        int[] calls = {0};
+        MinimapChunkCache cache = new MinimapChunkCache((world, coord) -> {
+            calls[0]++;
+            return new int[256];
+        }, (world, coord) -> true);
+        Set<ChunkCoord> needed = new LinkedHashSet<>();
+        needed.add(new ChunkCoord(0, 0));
+        needed.add(new ChunkCoord(1, 0));
+
+        cache.tick(null, World.OVERWORLD, needed);
+        assertEquals(1, calls[0]);
+
+        cache.tick(null, World.OVERWORLD, needed);
+        assertEquals(2, calls[0]);
+
+        // 이미 둘 다 채워졌으니 세 번째 틱은 다시 샘플링하지 않는다.
+        cache.tick(null, World.OVERWORLD, needed);
+        assertEquals(2, calls[0]);
+    }
+
+    @Test
+    void colorAtReturnsSampledValueAfterTick() {
+        MinimapChunkCache cache = new MinimapChunkCache((world, coord) -> {
+            int[] colors = new int[256];
+            colors[0] = 0xFFAABBCC; // localX=0, localZ=0
+            return colors;
+        }, (world, coord) -> true);
+
+        cache.tick(null, World.OVERWORLD, Set.of(new ChunkCoord(0, 0)));
+
+        assertEquals(0xFFAABBCC, cache.colorAt(0, 0));
+    }
+
+    @Test
+    void colorAtReturnsTransparentForUncachedChunk() {
+        MinimapChunkCache cache = new MinimapChunkCache((world, coord) -> new int[256], (world, coord) -> true);
+
+        assertEquals(0, cache.colorAt(500, 500));
+    }
+
+    @Test
+    void dimensionChangeClearsCache() {
+        MinimapChunkCache cache = new MinimapChunkCache((world, coord) -> {
+            int[] colors = new int[256];
+            colors[0] = 0xFFAABBCC;
+            return colors;
+        }, (world, coord) -> true);
+        cache.tick(null, World.OVERWORLD, Set.of(new ChunkCoord(0, 0)));
+        assertEquals(0xFFAABBCC, cache.colorAt(0, 0));
+
+        // 차원이 바뀌면 캐시가 비워진다 — 새로 채워지기 전까진 다시 미탐사(투명) 취급.
+        cache.tick(null, World.NETHER, Set.of());
+        assertEquals(0, cache.colorAt(0, 0));
+    }
+
+    @Test
+    void unloadedChunkIsSkippedNotCachedAndDoesNotConsumeBudget() {
+        // 최종 리뷰에서 발견된 버그 재현: 아직 로드 안 된 청크를 그대로 샘플링하면 실제
+        // 게임에서 영구 검은 칸이 남았다. isLoaded가 false를 주면 샘플러가 아예 안 불려야
+        // 하고(예산 안 씀), 캐시에도 안 남아야 한다(나중에 로드되면 다시 시도해야 하므로).
+        int[] calls = {0};
+        MinimapChunkCache cache = new MinimapChunkCache(
+            (world, coord) -> {
+                calls[0]++;
+                return new int[256];
+            },
+            (world, coord) -> false
+        );
+
+        cache.tick(null, World.OVERWORLD, Set.of(new ChunkCoord(0, 0)));
+
+        assertEquals(0, calls[0]);
+        assertEquals(0, cache.colorAt(0, 0));
+    }
+
+    @Test
+    void chunkIsSampledOnceItBecomesLoaded() {
+        boolean[] loaded = {false};
+        int[] calls = {0};
+        MinimapChunkCache cache = new MinimapChunkCache(
+            (world, coord) -> {
+                calls[0]++;
+                int[] colors = new int[256];
+                colors[0] = 0xFFAABBCC;
+                return colors;
+            },
+            (world, coord) -> loaded[0]
+        );
+
+        cache.tick(null, World.OVERWORLD, Set.of(new ChunkCoord(0, 0)));
+        assertEquals(0, calls[0]);
+        assertEquals(0, cache.colorAt(0, 0));
+
+        loaded[0] = true;
+        cache.tick(null, World.OVERWORLD, Set.of(new ChunkCoord(0, 0)));
+        assertEquals(1, calls[0]);
+        assertEquals(0xFFAABBCC, cache.colorAt(0, 0));
+    }
+}
+```
+
+- [ ] **Step 3: 테스트 통과 확인**
+
+Run (`mod/` 디렉터리에서):
+```bash
+JAVA_HOME="C:/Users/Skdji/devtools/jdk21/jdk-21.0.11+10" ./gradlew.bat test --tests "com.cubeclient.mod.minimap.MinimapChunkCacheTest"
+```
+Expected: PASS, 6개 테스트 전부(기존 4개 + 새 2개).
+
+- [ ] **Step 4: `MinimapCompositor` 수정 — `snapToPixelGrid` 공개 (발견 3의 준비 작업)**
+
+`mod/src/main/java/com/cubeclient/mod/minimap/MinimapCompositor.java`를 아래로 교체(기존 동작은 그대로, `blocksPerPixel` 계산과 스냅 계산을 재사용 가능한 메서드로 뽑기만 함 — 기존 3개 테스트 결과가 안 바뀌어야 한다):
+
+```java
+// mod/src/main/java/com/cubeclient/mod/minimap/MinimapCompositor.java
+package com.cubeclient.mod.minimap;
+
+/** 캐시된 청크 색상 데이터를 플레이어 중심 원형 이미지로 합성한다. Minecraft 객체에 의존하지
+ * 않는다 — 실제 색상 조회는 ColumnColorLookup을 통해 주입받는다(MinimapChunkCache가 구현). */
+public final class MinimapCompositor {
+    private MinimapCompositor() {}
+
+    @FunctionalInterface
+    public interface ColumnColorLookup {
+        /** blockX, blockZ 컬럼의 ARGB 색상. 아직 캐시되지 않은 청크는 0(완전 투명)을 반환해야 한다. */
+        int colorAt(int blockX, int blockZ);
+    }
+
+    /** playerX/playerZ를 픽셀 격자(blocksPerPixel) 단위로 스냅한다 — 지형 합성과 엔티티 점이
+     * 같은 기준점을 쓰게 하려고 공개 메서드로 뽑았다. 따로 계산하면 지형은 픽셀 단위로만
+     * 갱신되는데 점은 매끄럽게 움직여서 서로 어긋나 보인다(최종 리뷰에서 발견). */
+    public static double snapToPixelGrid(double coordinate, int textureSize, double radiusBlocks) {
+        double blocksPerPixel = blocksPerPixel(textureSize, radiusBlocks);
+        return Math.floor(coordinate / blocksPerPixel) * blocksPerPixel;
+    }
+
+    /** textureSize x textureSize 픽셀의 ARGB 배열(row-major, index = py*textureSize+px)을 만든다.
+     * radiusBlocks는 실제 블록 단위 반경 — textureSize와 별개라서, 같은 반경을 더 크거나 작은
+     * 텍스처로 렌더링할 수 있다(HUD 편집기의 배율 조절이 이걸 이용한다). 반경 밖 픽셀은 0. */
+    public static int[] composite(int textureSize, double radiusBlocks, double playerX, double playerZ,
+                                   ColumnColorLookup lookup) {
+        int[] pixels = new int[textureSize * textureSize];
+        double half = textureSize / 2.0;
+        double blocksPerPixel = blocksPerPixel(textureSize, radiusBlocks);
+
+        // 플레이어의 소수점 좌표를 그대로 쓰면, 픽셀마다 dxBlocks가 blocksPerPixel의 서로 다른
+        // 배수라서 각자 다른 순간에 옆 블록으로 넘어가 깜빡이는 노이즈가 생긴다. 격자에
+        // 스냅하면 기준점이 한 픽셀만큼 움직일 때만 바뀌고, 그 순간엔 모든 픽셀이 동시에
+        // 밀려서 매끄럽게 스크롤한다.
+        double snappedPlayerX = snapToPixelGrid(playerX, textureSize, radiusBlocks);
+        double snappedPlayerZ = snapToPixelGrid(playerZ, textureSize, radiusBlocks);
+
+        for (int py = 0; py < textureSize; py++) {
+            double dzBlocks = (py + 0.5 - half) * blocksPerPixel;
+            for (int px = 0; px < textureSize; px++) {
+                double dxBlocks = (px + 0.5 - half) * blocksPerPixel;
+                int index = py * textureSize + px;
+
+                if (!MinimapMath.isColumnWithinRadius(dxBlocks, dzBlocks, radiusBlocks)) {
+                    pixels[index] = 0;
+                    continue;
+                }
+
+                int blockX = (int) Math.floor(snappedPlayerX + dxBlocks);
+                int blockZ = (int) Math.floor(snappedPlayerZ + dzBlocks);
+                pixels[index] = lookup.colorAt(blockX, blockZ);
+            }
+        }
+        return pixels;
+    }
+
+    private static double blocksPerPixel(int textureSize, double radiusBlocks) {
+        return radiusBlocks / (textureSize / 2.0);
+    }
+}
+```
+
+- [ ] **Step 5: `MinimapCompositorTest`에 `snapToPixelGrid` 직접 테스트 추가**
+
+`mod/src/test/java/com/cubeclient/mod/minimap/MinimapCompositorTest.java`의 기존 3개 테스트(Task 3에서 만든 2개 + Task 10에서 추가한 1개)는 그대로 두고, 아래 테스트를 추가:
+
+```java
+    @Test
+    void snapToPixelGridSnapsDownToNearestMultiple() {
+        // blocksPerPixel = 2/1 = 2.0 for textureSize=2, radiusBlocks=2.0
+        assertEquals(0.0, MinimapCompositor.snapToPixelGrid(0.0, 2, 2.0), 0.0001);
+        assertEquals(0.0, MinimapCompositor.snapToPixelGrid(1.9, 2, 2.0), 0.0001);
+        assertEquals(2.0, MinimapCompositor.snapToPixelGrid(2.0, 2, 2.0), 0.0001);
+        assertEquals(-2.0, MinimapCompositor.snapToPixelGrid(-0.1, 2, 2.0), 0.0001);
+    }
+```
+
+- [ ] **Step 6: 테스트 통과 확인**
+
+Run:
+```bash
+JAVA_HOME="C:/Users/Skdji/devtools/jdk21/jdk-21.0.11+10" ./gradlew.bat test --tests "com.cubeclient.mod.minimap.MinimapCompositorTest"
+```
+Expected: PASS, 4개 테스트 전부(기존 3개 그대로 + 새 1개).
+
+- [ ] **Step 7: `TerrainMinimap` 수정 — 발견 3 + 추가 사소한 항목 2개**
+
+`mod/src/main/java/com/cubeclient/mod/features/TerrainMinimap.java` 전체를 아래로 교체:
+
+```java
+package com.cubeclient.mod.features;
+
+import com.cubeclient.mod.config.CachedConfig;
+import com.cubeclient.mod.config.ModConfig;
+import com.cubeclient.mod.gui.HudPosition;
+import com.cubeclient.mod.gui.HudRenderUtil;
+import com.cubeclient.mod.minimap.ArrowShape;
+import com.cubeclient.mod.minimap.ChunkCoord;
+import com.cubeclient.mod.minimap.EntityBlipClassifier;
+import com.cubeclient.mod.minimap.MinimapChunkCache;
+import com.cubeclient.mod.minimap.MinimapCompositor;
+import com.cubeclient.mod.minimap.MinimapMath;
+import com.cubeclient.mod.registry.Category;
+import com.cubeclient.mod.registry.PositionedHudFeature;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.texture.NativeImage;
+import net.minecraft.client.texture.NativeImageBackedTexture;
+import net.minecraft.client.util.InputUtil;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.mob.Monster;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.math.Box;
+import org.lwjgl.glfw.GLFW;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+public class TerrainMinimap implements PositionedHudFeature {
+    private static final int TEXTURE_SIZE = 128;
+    private static final double RADIUS_BLOCKS = 96.0;
+    private static final int ARROW_BOX = 8;
+    private static final int ARROW_ARGB = 0xFF2FA968;
+    private static final Identifier TEXTURE_ID = Identifier.of("cubeclient", "minimap_composite");
+
+    private final CachedConfig cachedConfig;
+    private final MinimapChunkCache chunkCache = new MinimapChunkCache();
+    private final KeyBinding minimapKey;
+    private NativeImageBackedTexture texture;
+    private boolean minimapKeyWasDown;
+    private List<Dot> cachedDots = List.of();
+
+    public TerrainMinimap(CachedConfig cachedConfig) {
+        this.cachedConfig = cachedConfig;
+        // M키는 B3의 C키와 달리 실제 실행 중인 인스턴스의 options.txt에서 확인한 결과 바닐라
+        // 기본 키와 겹치지 않는다 — InputUtil.isKeyPressed 우회 없이 KeyBinding.isPressed()를
+        // 그대로 써도 된다(위 "검증된 API 시그니처" 참고).
+        this.minimapKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+            "key.cubeclient.minimap", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_M, "key.categories.cubeclient"));
+        ClientTickEvents.END_CLIENT_TICK.register(this::onTick);
+    }
+
+    // 렌더 루프(중앙 디스패치)와 별개로 이 리스너는 스스로 등록한 것이라, 청크 캐시 예산 소비는
+    // 켜짐 여부를 직접 확인해야 한다(ToggleSprint/ZoomKey와 같은 이유 — B3 아키텍처 참고). M키
+    // 토글 자체는 켜짐 여부와 무관하게 항상 눌림을 감지해야 하므로 그 확인보다 먼저 처리한다.
+    private void onTick(MinecraftClient client) {
+        boolean isDown = minimapKey.isPressed();
+        // client.currentScreen == null 가드: 바닐라가 화면 열린 동안 KeyBinding 눌림을 안
+        // 갱신해서 지금은 이 가드가 없어도 사실상 안전하지만(최종 리뷰에서 바이트코드로 확인),
+        // ZoomKey.isSafeToZoom과 같은 이유로 방어적으로 넣어둔다 — 나중에 그 동작이 바뀌면
+        // ModListScreen이 자기 로컬 config 스냅샷을 저장할 때 이 토글을 조용히 덮어쓸 수 있다.
+        if (isDown && !minimapKeyWasDown && client.currentScreen == null) {
+            toggleEnabled();
+        }
+        minimapKeyWasDown = isDown;
+
+        if (client.player == null || client.world == null || !cachedConfig.current().isEnabled(id())) {
+            return;
+        }
+
+        double playerX = client.player.getX();
+        double playerZ = client.player.getZ();
+
+        Set<ChunkCoord> needed = new HashSet<>(MinimapMath.chunksInRadius(playerX, playerZ, RADIUS_BLOCKS));
+        chunkCache.tick(client.world, client.world.getRegistryKey(), needed);
+
+        // 지형 합성(16,384픽셀 루프)과 텍스처 업로드, 엔티티 점 계산은 매 프레임(초당
+        // 60~200+회)이 아니라 여기, 고정 20Hz 틱에서만 한다 — "매 프레임/매 틱 무거운 작업
+        // 금지" 원칙(최종 리뷰에서 엔티티 점 조회가 여전히 render()에 남아있던 걸 발견).
+        // render()는 여기서 만든 텍스처와 점 목록을 그대로 그리기만 한다.
+        if (texture == null) {
+            texture = new NativeImageBackedTexture(TEXTURE_SIZE, TEXTURE_SIZE, true);
+            client.getTextureManager().registerTexture(TEXTURE_ID, texture);
+        }
+
+        int[] pixels = MinimapCompositor.composite(TEXTURE_SIZE, RADIUS_BLOCKS, playerX, playerZ, chunkCache);
+        stampArrow(pixels, client.player.getYaw());
+
+        NativeImage image = texture.getImage();
+        for (int py = 0; py < TEXTURE_SIZE; py++) {
+            for (int px = 0; px < TEXTURE_SIZE; px++) {
+                image.setColorArgb(px, py, pixels[py * TEXTURE_SIZE + px]);
+            }
+        }
+        texture.upload();
+
+        // 지형과 같은 스냅된 기준점을 써야 엔티티 점이 지형과 같은 시점에 갱신된다 — 따로
+        // playerX/playerZ를 그대로 쓰면 지형은 픽셀 단위로만 갱신되는데 점은 매끄럽게 움직여서
+        // 서로 어긋나 보인다(최종 리뷰에서 발견).
+        double snappedPlayerX = MinimapCompositor.snapToPixelGrid(playerX, TEXTURE_SIZE, RADIUS_BLOCKS);
+        double snappedPlayerZ = MinimapCompositor.snapToPixelGrid(playerZ, TEXTURE_SIZE, RADIUS_BLOCKS);
+        cachedDots = computeDots(client, snappedPlayerX, snappedPlayerZ);
+    }
+
+    // 모드 목록 화면의 체크박스(ModListScreen.onToggle)와 정확히 같은 read-modify-write
+    // 패턴 — M키는 그 체크박스의 단축키일 뿐, 별도 상태를 두지 않는다.
+    private void toggleEnabled() {
+        ModConfig current = cachedConfig.current();
+        Map<String, Boolean> enabled = new HashMap<>(current.enabled());
+        enabled.put(id(), !current.isEnabled(id()));
+        try {
+            cachedConfig.save(new ModConfig(enabled, current.favorites(), current.positions()));
+        } catch (IOException e) {
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client.player != null) {
+                client.player.sendMessage(Text.literal("설정을 저장하지 못했습니다: " + e.getMessage()), false);
+            }
+        }
+    }
+
+    @Override
+    public void render(DrawContext context, HudPosition pos) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        // texture == null 방어는 첫 틱이 아직 안 돈 순간(월드 로딩 직후 첫 프레임 등)을 대비한
+        // 것 — onTick()이 텍스처를 만들고 채우기 전까지는 그릴 게 없다.
+        if (client.player == null || client.world == null || texture == null) {
+            return;
+        }
+
+        HudRenderUtil.drawScaled(context, pos, (ctx, x, y) -> {
+            ctx.drawTexture(RenderLayer::getGuiTextured, TEXTURE_ID,
+                x, y, 0f, 0f, TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE);
+            for (Dot dot : cachedDots) {
+                ctx.fill(x + dot.px() - 1, y + dot.py() - 1, x + dot.px() + 1, y + dot.py() + 1, dot.argb());
+            }
+        });
+    }
+
+    private void stampArrow(int[] pixels, float yawDegrees) {
+        int half = TEXTURE_SIZE / 2;
+        for (int dz = -ARROW_BOX; dz <= ARROW_BOX; dz++) {
+            for (int dx = -ARROW_BOX; dx <= ARROW_BOX; dx++) {
+                if (!ArrowShape.isInsideArrow(dx, dz, yawDegrees)) {
+                    continue;
+                }
+                int px = half + dx;
+                int pz = half + dz;
+                if (px >= 0 && px < TEXTURE_SIZE && pz >= 0 && pz < TEXTURE_SIZE) {
+                    pixels[pz * TEXTURE_SIZE + px] = ARROW_ARGB;
+                }
+            }
+        }
+    }
+
+    // 화면 픽셀 오프셋(px,py, 텍스처 로컬 좌표계)과 색을 미리 계산해둔 스냅샷 — render()는
+    // 이걸 그리기만 하고 엔티티 조회는 하지 않는다.
+    private record Dot(int px, int py, int argb) {}
+
+    private List<Dot> computeDots(MinecraftClient client, double snappedPlayerX, double snappedPlayerZ) {
+        double playerY = client.player.getY();
+        Box searchBox = new Box(
+            snappedPlayerX - RADIUS_BLOCKS, playerY - 64, snappedPlayerZ - RADIUS_BLOCKS,
+            snappedPlayerX + RADIUS_BLOCKS, playerY + 64, snappedPlayerZ + RADIUS_BLOCKS);
+        List<Entity> nearby = client.world.getOtherEntities(client.player, searchBox,
+            entity -> entity instanceof LivingEntity);
+
+        double half = TEXTURE_SIZE / 2.0;
+        double blocksPerPixel = RADIUS_BLOCKS / half;
+        List<Dot> dots = new ArrayList<>();
+        for (Entity entity : nearby) {
+            double dx = entity.getX() - snappedPlayerX;
+            double dz = entity.getZ() - snappedPlayerZ;
+            if (!MinimapMath.isColumnWithinRadius(dx, dz, RADIUS_BLOCKS)) {
+                continue;
+            }
+            EntityBlipClassifier.BlipColor blip = EntityBlipClassifier.classify(
+                entity instanceof PlayerEntity, entity instanceof Monster);
+            int px = (int) (dx / blocksPerPixel + half);
+            int py = (int) (dz / blocksPerPixel + half);
+            dots.add(new Dot(px, py, blipArgb(blip)));
+        }
+        return dots;
+    }
+
+    private static int blipArgb(EntityBlipClassifier.BlipColor blip) {
+        return switch (blip) {
+            case HOSTILE -> 0xFFE05A5A;
+            case FRIENDLY -> 0xFF6FCF7A;
+            case PLAYER -> 0xFFF2F2F2;
+        };
+    }
+
+    @Override
+    public String id() {
+        return "minimap";
+    }
+
+    @Override
+    public String displayName() {
+        return "미니맵 (M키)";
+    }
+
+    @Override
+    public Category category() {
+        return Category.WORLD;
+    }
+
+    @Override
+    public HudPosition defaultPosition() {
+        return HudPosition.of(0.72, 0.03, 0.5);
+    }
+
+    @Override
+    public int renderedWidth() {
+        return TEXTURE_SIZE;
+    }
+
+    @Override
+    public int renderedHeight() {
+        return TEXTURE_SIZE;
+    }
+}
+```
+
+- [ ] **Step 8: `HudEditorScreen` 수정 — 발견 4**
+
+`mod/src/main/java/com/cubeclient/mod/gui/HudEditorScreen.java`에서 아래 줄을 찾아:
+
+```java
+            double handleDelta = (mouseX - dragStartMouseX) / 80.0;
+```
+
+아래로 교체:
+
+```java
+            double handleDelta = (mouseX - dragStartMouseX) / (double) dragging.feature.renderedWidth();
+```
+
+- [ ] **Step 9: 전체 컴파일 및 테스트 통과 확인**
+
+Run:
+```bash
+JAVA_HOME="C:/Users/Skdji/devtools/jdk21/jdk-21.0.11+10" ./gradlew.bat test
+```
+Expected: BUILD SUCCESSFUL, 지금까지 만든 유닛 테스트 전부(다른 서브프로젝트 포함) 통과.
+
+- [ ] **Step 10: 커밋**
+
+```bash
+git add mod/src/main/java/com/cubeclient/mod/minimap/MinimapChunkCache.java mod/src/test/java/com/cubeclient/mod/minimap/MinimapChunkCacheTest.java mod/src/main/java/com/cubeclient/mod/minimap/MinimapCompositor.java mod/src/test/java/com/cubeclient/mod/minimap/MinimapCompositorTest.java mod/src/main/java/com/cubeclient/mod/features/TerrainMinimap.java mod/src/main/java/com/cubeclient/mod/gui/HudEditorScreen.java
+git commit -m "Fix final-review findings: skip unloaded chunks in cache, invalidate on world-instance change, move entity dots to tick rate, fix resize-drag divisor"
+```
+
+- [ ] **Step 11: 재빌드·재배포 후 실기기 재확인**
+
+Task 7과 같은 방식으로 빌드해서 두 인스턴스 `mods/`에 배포하고 확인:
+- 새 지역에 빠르게 들어갈 때 검은 사각형 없이 자연스럽게 채워지는지(발견 1).
+- 월드 나갔다 다른 월드/서버 들어갔을 때 이전 지형이 안 남아있는지(발견 2, World 인스턴스 변경 — 유닛 테스트 대상 아니므로 이 확인이 유일한 검증).
+- 엔티티 점이 여전히 정상적으로 움직이는지, FPS 저하가 없는지(발견 3).
+- HUD 편집기에서 미니맵 리사이즈 핸들이 마우스 이동과 자연스럽게 맞아떨어지는지(발견 4).
