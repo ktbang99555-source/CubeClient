@@ -74,6 +74,8 @@ public static RenderLayer getGuiTextured(Identifier); // DrawContext.drawTexture
 - **원형 마스크에 스텐실/오프스크린 프레임버퍼가 필요 없다.** 지형 이미지를 어차피 `NativeImage`에 픽셀 단위로 직접 써야 하므로(청크 텍스처 자체가 이 방식), 반경 밖 픽셀은 그냥 알파 0(`0x00000000`)으로 쓰면 된다 — `DrawContext.drawTexture`가 일반 알파 블렌딩으로 그리므로 별도 GL 기법이 전혀 필요 없다.
 - **M키는 바닐라 기본 키와 충돌하지 않는다.** 실제 실행 중인 인스턴스(`%APPDATA%\CubeClient\instances\fabric-1.21.4\options.txt`)의 키 목록을 직접 확인했고, `key.keyboard.m`을 쓰는 바닐라 바인딩이 하나도 없다 — B3에서 C키가 `key.saveToolbarActivator`와 겹쳤던 함정이 이번엔 없다.
 
+**Task 1 실제 구현 중 발견된 것 — `ChunkPos`는 순수 값 타입이 아니다.** `net.minecraft.util.math.ChunkPos`의 static 초기화 블록이 `ChunkStatus.FULL`/`ChunkGenerationSteps.GENERATION`(둘 다 실제로 채워진 레지스트리 항목) 을 참조한다(`javap -c`로 static 초기화 바이트코드 확인) — 그래서 게임이 부팅되지 않은 순수 JUnit 환경에서 `new ChunkPos(x, z)`를 호출하면 `IllegalArgumentException: Not bootstrapped`로 죽는다. `int` 한 쌍짜리 값 타입처럼 보여도 순수 테스트에 안전하지 않다. **아래 모든 태스크는 `ChunkPos` 대신 이 모드가 직접 정의하는 순수 값 타입 `ChunkCoord(int x, int z)`를 순수/테스트 계층에서 쓰고, 실제 `World`를 만지는 지점(Task 4의 `ChunkColorSampler`, Task 5의 기본 샘플러 어댑터)에서만 `ChunkPos`로 변환한다.** (참고로 `net.minecraft.world.World`의 `OVERWORLD`/`NETHER` 상수는 `RegistryKey.of(...)`로 키 객체만 만들 뿐 채워진 레지스트리를 참조하지 않아 이런 문제가 없다 — 마찬가지로 `javap -c`로 확인함.)
+
 **확인 안 된 채 남겨두는 것(런타임 시각 확인 필요, Task 7에서 검증)**:
 - `getTopY(Heightmap.Type.WORLD_SURFACE, x, z)`가 반환하는 Y가 "그 컬럼의 실제 최상단 블록"인지 "그 한 칸 위(공기)"인지 — 이번 계획은 `-1`을 뺀 값을 실제 블록으로 가정했다(바닐라 지도 아이템과 같은 규약으로 추정). 안 맞으면 Task 4에서 오프셋만 조정하면 되는 국소적 문제다.
 - `MapColor.getRenderColor(Brightness)`가 반환하는 정수가 `NativeImage.setColorArgb`가 기대하는 채널 순서와 정확히 맞는지 — 안 맞으면 지형 색이 이상하게(예: 빨강/파랑이 바뀐 것처럼) 보일 것이고, Task 7 실기기 검증에서 바로 눈에 띈다.
@@ -81,22 +83,24 @@ public static RenderLayer getGuiTextured(Identifier); // DrawContext.drawTexture
 
 ---
 
-### Task 1: `MinimapMath` — 반경·청크 목록 순수 계산
+### Task 1: `ChunkCoord` + `MinimapMath` — 반경·청크 목록 순수 계산
 
 **Files:**
+- Create: `mod/src/main/java/com/cubeclient/mod/minimap/ChunkCoord.java`
 - Create: `mod/src/main/java/com/cubeclient/mod/minimap/MinimapMath.java`
 - Create: `mod/src/test/java/com/cubeclient/mod/minimap/MinimapMathTest.java`
 
 **Interfaces:**
-- Consumes: 없음(순수 함수, Minecraft 클래스는 `ChunkPos`만 값 타입으로 사용).
-- Produces: `MinimapMath.isColumnWithinRadius(double dx, double dz, double radius) -> boolean`, `MinimapMath.chunksInRadius(double playerX, double playerZ, double radius) -> List<ChunkPos>`. Task 3(엔티티 점 반경 판정)과 Task 6(필요 청크 목록 계산)이 그대로 가져다 쓴다.
+- Consumes: 없음(순수 함수, Minecraft 클래스 의존 전혀 없음 — 아래 `ChunkCoord` 참고).
+- Produces: `ChunkCoord(int x, int z)`(record, 순수 값 타입), `MinimapMath.isColumnWithinRadius(double dx, double dz, double radius) -> boolean`, `MinimapMath.chunksInRadius(double playerX, double playerZ, double radius) -> List<ChunkCoord>`. Task 3(엔티티 점 반경 판정)이 `isColumnWithinRadius`를, Task 5(캐시 키)와 Task 6(필요 청크 목록 계산)이 `ChunkCoord`/`chunksInRadius`를 그대로 가져다 쓴다.
+
+**왜 `net.minecraft.util.math.ChunkPos`를 안 쓰는지**: 위 "검증된 API 시그니처" 절 참고 — `ChunkPos`의 static 초기화가 게임 레지스트리를 참조해서 부팅 안 된 JUnit 환경에서 인스턴스화하면 죽는다. `ChunkCoord`는 그 문제가 아예 없는, 이 모드가 직접 정의하는 `int` 두 개짜리 순수 record다.
 
 - [ ] **Step 1: 실패하는 테스트 작성**
 
 ```java
 package com.cubeclient.mod.minimap;
 
-import net.minecraft.util.math.ChunkPos;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -131,12 +135,12 @@ class MinimapMathTest {
     @Test
     void chunksInRadiusCoversExpectedBoundingBox() {
         // playerX=0, playerZ=0, radius=20 -> chunk index range floor(-20/16)..floor(20/16) = -2..1 (4칸) 양축
-        List<ChunkPos> chunks = MinimapMath.chunksInRadius(0, 0, 20);
+        List<ChunkCoord> chunks = MinimapMath.chunksInRadius(0, 0, 20);
 
         assertEquals(16, chunks.size());
-        assertTrue(chunks.contains(new ChunkPos(-2, -2)));
-        assertTrue(chunks.contains(new ChunkPos(1, 1)));
-        assertFalse(chunks.contains(new ChunkPos(2, 0)));
+        assertTrue(chunks.contains(new ChunkCoord(-2, -2)));
+        assertTrue(chunks.contains(new ChunkCoord(1, 1)));
+        assertFalse(chunks.contains(new ChunkCoord(2, 0)));
     }
 }
 ```
@@ -147,14 +151,24 @@ Run (`mod/` 디렉터리에서):
 ```bash
 JAVA_HOME="C:/Users/Skdji/devtools/jdk21/jdk-21.0.11+10" ./gradlew.bat test --tests "com.cubeclient.mod.minimap.MinimapMathTest"
 ```
-Expected: FAIL — `MinimapMath` 클래스 없음.
+Expected: FAIL — `MinimapMath`/`ChunkCoord` 클래스 없음.
 
 - [ ] **Step 3: 최소 구현 작성**
 
 ```java
+// mod/src/main/java/com/cubeclient/mod/minimap/ChunkCoord.java
 package com.cubeclient.mod.minimap;
 
-import net.minecraft.util.math.ChunkPos;
+/** 순수 청크 좌표 값 타입. net.minecraft.util.math.ChunkPos는 static 초기화 시 게임
+ * 레지스트리를 참조해서 부팅되지 않은 JUnit 환경에서 인스턴스화하면 죽는다(javap로 확인) —
+ * 이 모드의 순수/테스트 계층은 전부 이 타입을 쓰고, 실제 게임 안에서 World를 만질 때만
+ * ChunkPos로 변환한다. */
+public record ChunkCoord(int x, int z) {}
+```
+
+```java
+// mod/src/main/java/com/cubeclient/mod/minimap/MinimapMath.java
+package com.cubeclient.mod.minimap;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -171,16 +185,16 @@ public final class MinimapMath {
     /** 플레이어 위치를 중심으로 반경을 덮는 데 필요한 청크 좌표 전부(사각 경계 근사, 모서리
      * 청크 몇 개가 실제로는 반경 밖이어도 포함될 수 있다 — MinimapCompositor가 픽셀 단위로
      * 다시 걸러내므로 여기선 손해가 없다). */
-    public static List<ChunkPos> chunksInRadius(double playerX, double playerZ, double radius) {
+    public static List<ChunkCoord> chunksInRadius(double playerX, double playerZ, double radius) {
         int minChunkX = (int) Math.floor((playerX - radius) / 16.0);
         int maxChunkX = (int) Math.floor((playerX + radius) / 16.0);
         int minChunkZ = (int) Math.floor((playerZ - radius) / 16.0);
         int maxChunkZ = (int) Math.floor((playerZ + radius) / 16.0);
 
-        List<ChunkPos> result = new ArrayList<>();
+        List<ChunkCoord> result = new ArrayList<>();
         for (int cx = minChunkX; cx <= maxChunkX; cx++) {
             for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
-                result.add(new ChunkPos(cx, cz));
+                result.add(new ChunkCoord(cx, cz));
             }
         }
         return result;
@@ -199,8 +213,8 @@ Expected: PASS, 5개 테스트 전부.
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add mod/src/main/java/com/cubeclient/mod/minimap/MinimapMath.java mod/src/test/java/com/cubeclient/mod/minimap/MinimapMathTest.java
-git commit -m "Add MinimapMath: pure radius/chunk-range calculations for the minimap"
+git add mod/src/main/java/com/cubeclient/mod/minimap/ChunkCoord.java mod/src/main/java/com/cubeclient/mod/minimap/MinimapMath.java mod/src/test/java/com/cubeclient/mod/minimap/MinimapMathTest.java
+git commit -m "Add ChunkCoord and MinimapMath: pure radius/chunk-range calculations for the minimap"
 ```
 
 ---
@@ -595,15 +609,14 @@ git commit -m "Add ChunkColorSampler: extract per-column map colors from a loade
 - Create: `mod/src/test/java/com/cubeclient/mod/minimap/MinimapChunkCacheTest.java`
 
 **Interfaces:**
-- Consumes: `MinimapCompositor.ColumnColorLookup`(Task 3, 이 클래스가 구현), 기본 샘플러로 `ChunkColorSampler::sampleChunk`(Task 4)를 참조하지만 생성자로 다른 샘플러를 주입할 수 있어(ZoomKey의 `LongSupplier` 패턴과 동일) 테스트는 가짜 샘플러로 진행한다.
-- Produces: `MinimapChunkCache()`(공개 생성자, 실서비스용), `MinimapChunkCache(BiFunction<World, ChunkPos, int[]> sampler)`(패키지 전용, 테스트용), `tick(World world, RegistryKey<World> dimension, Set<ChunkPos> neededChunks)`, `colorAt(int blockX, int blockZ) -> int`(`ColumnColorLookup` 구현). Task 6이 `chunkCache`를 `MinimapCompositor.composite`의 `lookup` 인자로 그대로 넘긴다.
+- Consumes: `MinimapCompositor.ColumnColorLookup`(Task 3, 이 클래스가 구현), `ChunkCoord`(Task 1). 기본 샘플러는 `ChunkColorSampler::sampleChunk`(Task 4)를 `ChunkCoord -> ChunkPos` 변환 어댑터로 감싸서 쓰지만, 생성자로 다른 샘플러를 주입할 수 있어(ZoomKey의 `LongSupplier` 패턴과 동일) 테스트는 `ChunkCoord`만 다루는 가짜 샘플러로 진행한다 — 테스트 코드가 `net.minecraft.util.math.ChunkPos`를 전혀 안 건드리므로 위에서 발견한 "부팅 안 됨" 문제가 없다.
+- Produces: `MinimapChunkCache()`(공개 생성자, 실서비스용), `MinimapChunkCache(BiFunction<World, ChunkCoord, int[]> sampler)`(패키지 전용, 테스트용), `tick(World world, RegistryKey<World> dimension, Set<ChunkCoord> neededChunks)`, `colorAt(int blockX, int blockZ) -> int`(`ColumnColorLookup` 구현). Task 6이 `chunkCache`를 `MinimapCompositor.composite`의 `lookup` 인자로 그대로 넘기고, `MinimapMath.chunksInRadius`가 만든 `Set<ChunkCoord>`를 `tick()`에 그대로 넘긴다.
 
 - [ ] **Step 1: 실패하는 테스트 작성**
 
 ```java
 package com.cubeclient.mod.minimap;
 
-import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.World;
 import org.junit.jupiter.api.Test;
 
@@ -617,13 +630,13 @@ class MinimapChunkCacheTest {
     @Test
     void refreshesAtMostOneChunkPerTick() {
         int[] calls = {0};
-        MinimapChunkCache cache = new MinimapChunkCache((world, pos) -> {
+        MinimapChunkCache cache = new MinimapChunkCache((world, coord) -> {
             calls[0]++;
             return new int[256];
         });
-        Set<ChunkPos> needed = new LinkedHashSet<>();
-        needed.add(new ChunkPos(0, 0));
-        needed.add(new ChunkPos(1, 0));
+        Set<ChunkCoord> needed = new LinkedHashSet<>();
+        needed.add(new ChunkCoord(0, 0));
+        needed.add(new ChunkCoord(1, 0));
 
         cache.tick(null, World.OVERWORLD, needed);
         assertEquals(1, calls[0]);
@@ -638,32 +651,32 @@ class MinimapChunkCacheTest {
 
     @Test
     void colorAtReturnsSampledValueAfterTick() {
-        MinimapChunkCache cache = new MinimapChunkCache((world, pos) -> {
+        MinimapChunkCache cache = new MinimapChunkCache((world, coord) -> {
             int[] colors = new int[256];
             colors[0] = 0xFFAABBCC; // localX=0, localZ=0
             return colors;
         });
 
-        cache.tick(null, World.OVERWORLD, Set.of(new ChunkPos(0, 0)));
+        cache.tick(null, World.OVERWORLD, Set.of(new ChunkCoord(0, 0)));
 
         assertEquals(0xFFAABBCC, cache.colorAt(0, 0));
     }
 
     @Test
     void colorAtReturnsTransparentForUncachedChunk() {
-        MinimapChunkCache cache = new MinimapChunkCache((world, pos) -> new int[256]);
+        MinimapChunkCache cache = new MinimapChunkCache((world, coord) -> new int[256]);
 
         assertEquals(0, cache.colorAt(500, 500));
     }
 
     @Test
     void dimensionChangeClearsCache() {
-        MinimapChunkCache cache = new MinimapChunkCache((world, pos) -> {
+        MinimapChunkCache cache = new MinimapChunkCache((world, coord) -> {
             int[] colors = new int[256];
             colors[0] = 0xFFAABBCC;
             return colors;
         });
-        cache.tick(null, World.OVERWORLD, Set.of(new ChunkPos(0, 0)));
+        cache.tick(null, World.OVERWORLD, Set.of(new ChunkCoord(0, 0)));
         assertEquals(0xFFAABBCC, cache.colorAt(0, 0));
 
         // 차원이 바뀌면 캐시가 비워진다 — 새로 채워지기 전까진 다시 미탐사(투명) 취급.
@@ -697,29 +710,30 @@ import java.util.function.BiFunction;
 
 /** 청크별 색상 배열을 캐시하고, 매 tick() 호출마다 최대 1개 청크만 새로 샘플링한다(매 프레임
  * 무거운 작업 금지 원칙). 차원이 바뀌면 캐시 전체를 버린다 — 같은 청크 좌표라도 완전히 다른
- * 지형이기 때문. */
+ * 지형이기 때문. 캐시 키는 ChunkCoord(순수 값 타입) — 실제 ChunkPos 변환은 기본 샘플러
+ * 어댑터 안, 게임이 실제로 도는 순간에만 일어난다. */
 public class MinimapChunkCache implements MinimapCompositor.ColumnColorLookup {
-    private final BiFunction<World, ChunkPos, int[]> sampler;
-    private final Map<ChunkPos, int[]> colorsByChunk = new HashMap<>();
+    private final BiFunction<World, ChunkCoord, int[]> sampler;
+    private final Map<ChunkCoord, int[]> colorsByChunk = new HashMap<>();
     private RegistryKey<World> lastDimension;
 
     public MinimapChunkCache() {
-        this(ChunkColorSampler::sampleChunk);
+        this((world, coord) -> ChunkColorSampler.sampleChunk(world, new ChunkPos(coord.x(), coord.z())));
     }
 
-    MinimapChunkCache(BiFunction<World, ChunkPos, int[]> sampler) {
+    MinimapChunkCache(BiFunction<World, ChunkCoord, int[]> sampler) {
         this.sampler = sampler;
     }
 
-    public void tick(World world, RegistryKey<World> dimension, Set<ChunkPos> neededChunks) {
+    public void tick(World world, RegistryKey<World> dimension, Set<ChunkCoord> neededChunks) {
         if (!dimension.equals(lastDimension)) {
             colorsByChunk.clear();
             lastDimension = dimension;
         }
 
-        for (ChunkPos pos : neededChunks) {
-            if (!colorsByChunk.containsKey(pos)) {
-                colorsByChunk.put(pos, sampler.apply(world, pos));
+        for (ChunkCoord coord : neededChunks) {
+            if (!colorsByChunk.containsKey(coord)) {
+                colorsByChunk.put(coord, sampler.apply(world, coord));
                 return;
             }
         }
@@ -727,8 +741,8 @@ public class MinimapChunkCache implements MinimapCompositor.ColumnColorLookup {
 
     @Override
     public int colorAt(int blockX, int blockZ) {
-        ChunkPos pos = new ChunkPos(blockX >> 4, blockZ >> 4);
-        int[] chunkColors = colorsByChunk.get(pos);
+        ChunkCoord coord = new ChunkCoord(blockX >> 4, blockZ >> 4);
+        int[] chunkColors = colorsByChunk.get(coord);
         if (chunkColors == null) {
             return 0;
         }
@@ -860,6 +874,7 @@ import com.cubeclient.mod.config.ModConfig;
 import com.cubeclient.mod.gui.HudPosition;
 import com.cubeclient.mod.gui.HudRenderUtil;
 import com.cubeclient.mod.minimap.ArrowShape;
+import com.cubeclient.mod.minimap.ChunkCoord;
 import com.cubeclient.mod.minimap.EntityBlipClassifier;
 import com.cubeclient.mod.minimap.MinimapChunkCache;
 import com.cubeclient.mod.minimap.MinimapCompositor;
@@ -882,7 +897,6 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Box;
-import net.minecraft.util.math.ChunkPos;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.IOException;
@@ -928,7 +942,7 @@ public class TerrainMinimap implements PositionedHudFeature {
         if (client.player == null || client.world == null || !cachedConfig.current().isEnabled(id())) {
             return;
         }
-        Set<ChunkPos> needed = new HashSet<>(
+        Set<ChunkCoord> needed = new HashSet<>(
             MinimapMath.chunksInRadius(client.player.getX(), client.player.getZ(), RADIUS_BLOCKS));
         chunkCache.tick(client.world, client.world.getRegistryKey(), needed);
     }
