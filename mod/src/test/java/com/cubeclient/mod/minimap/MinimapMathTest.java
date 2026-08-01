@@ -1,6 +1,5 @@
 package com.cubeclient.mod.minimap;
 
-import net.minecraft.util.math.ChunkPos;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -35,11 +34,11 @@ class MinimapMathTest {
     @Test
     void chunksInRadiusCoversExpectedBoundingBox() {
         // playerX=0, playerZ=0, radius=20 -> chunk index range floor(-20/16)..floor(20/16) = -2..1 (4칸) 양축
-        List<ChunkPos> chunks = MinimapMath.chunksInRadius(0, 0, 20);
+        List<ChunkCoord> chunks = MinimapMath.chunksInRadius(0, 0, 20);
 
         assertEquals(16, chunks.size());
-        assertTrue(chunks.contains(new ChunkPos(-2, -2)));
-        assertTrue(chunks.contains(new ChunkPos(1, 1)));
-        assertFalse(chunks.contains(new ChunkPos(2, 0)));
+        assertTrue(chunks.contains(new ChunkCoord(-2, -2)));
+        assertTrue(chunks.contains(new ChunkCoord(1, 1)));
+        assertFalse(chunks.contains(new ChunkCoord(2, 0)));
     }
 }
