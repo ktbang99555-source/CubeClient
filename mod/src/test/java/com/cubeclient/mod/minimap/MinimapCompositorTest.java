@@ -51,4 +51,13 @@ class MinimapCompositorTest {
 
         assertArrayEquals(a, b);
     }
+
+    @Test
+    void snapToPixelGridSnapsDownToNearestMultiple() {
+        // blocksPerPixel = 2/1 = 2.0 for textureSize=2, radiusBlocks=2.0
+        assertEquals(0.0, MinimapCompositor.snapToPixelGrid(0.0, 2, 2.0), 0.0001);
+        assertEquals(0.0, MinimapCompositor.snapToPixelGrid(1.9, 2, 2.0), 0.0001);
+        assertEquals(2.0, MinimapCompositor.snapToPixelGrid(2.0, 2, 2.0), 0.0001);
+        assertEquals(-2.0, MinimapCompositor.snapToPixelGrid(-0.1, 2, 2.0), 0.0001);
+    }
 }

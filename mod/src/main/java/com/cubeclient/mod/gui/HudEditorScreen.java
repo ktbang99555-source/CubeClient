@@ -143,7 +143,7 @@ public class HudEditorScreen extends Screen {
             return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
         }
         if (draggingHandle) {
-            double handleDelta = (mouseX - dragStartMouseX) / 80.0;
+            double handleDelta = (mouseX - dragStartMouseX) / (double) dragging.feature.renderedWidth();
             dragging.position = HudPosition.of(
                 dragging.position.xRatio(), dragging.position.yRatio(), dragStartScale + handleDelta);
         } else {

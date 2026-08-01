@@ -31,6 +31,7 @@ import net.minecraft.util.math.Box;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -49,6 +50,7 @@ public class TerrainMinimap implements PositionedHudFeature {
     private final KeyBinding minimapKey;
     private NativeImageBackedTexture texture;
     private boolean minimapKeyWasDown;
+    private List<Dot> cachedDots = List.of();
 
     public TerrainMinimap(CachedConfig cachedConfig) {
         this.cachedConfig = cachedConfig;
@@ -65,7 +67,11 @@ public class TerrainMinimap implements PositionedHudFeature {
     // 토글 자체는 켜짐 여부와 무관하게 항상 눌림을 감지해야 하므로 그 확인보다 먼저 처리한다.
     private void onTick(MinecraftClient client) {
         boolean isDown = minimapKey.isPressed();
-        if (isDown && !minimapKeyWasDown) {
+        // client.currentScreen == null 가드: 바닐라가 화면 열린 동안 KeyBinding 눌림을 안
+        // 갱신해서 지금은 이 가드가 없어도 사실상 안전하지만(최종 리뷰에서 바이트코드로 확인),
+        // ZoomKey.isSafeToZoom과 같은 이유로 방어적으로 넣어둔다 — 나중에 그 동작이 바뀌면
+        // ModListScreen이 자기 로컬 config 스냅샷을 저장할 때 이 토글을 조용히 덮어쓸 수 있다.
+        if (isDown && !minimapKeyWasDown && client.currentScreen == null) {
             toggleEnabled();
         }
         minimapKeyWasDown = isDown;
@@ -73,21 +79,22 @@ public class TerrainMinimap implements PositionedHudFeature {
         if (client.player == null || client.world == null || !cachedConfig.current().isEnabled(id())) {
             return;
         }
-        Set<ChunkCoord> needed = new HashSet<>(
-            MinimapMath.chunksInRadius(client.player.getX(), client.player.getZ(), RADIUS_BLOCKS));
+
+        double playerX = client.player.getX();
+        double playerZ = client.player.getZ();
+
+        Set<ChunkCoord> needed = new HashSet<>(MinimapMath.chunksInRadius(playerX, playerZ, RADIUS_BLOCKS));
         chunkCache.tick(client.world, client.world.getRegistryKey(), needed);
 
-        // 지형 합성(16,384픽셀 루프)과 텍스처 업로드는 매 프레임(초당 60~200+회)이 아니라
-        // 여기, 고정 20Hz 틱에서만 한다 — "매 프레임/매 틱 무거운 작업 금지" 원칙은
-        // MinimapChunkCache의 틱당 청크 1개 예산뿐 아니라 이 합성 단계에도 똑같이 적용된다.
-        // render()는 여기서 만든 텍스처를 그대로 그리기만 한다.
+        // 지형 합성(16,384픽셀 루프)과 텍스처 업로드, 엔티티 점 계산은 매 프레임(초당
+        // 60~200+회)이 아니라 여기, 고정 20Hz 틱에서만 한다 — "매 프레임/매 틱 무거운 작업
+        // 금지" 원칙(최종 리뷰에서 엔티티 점 조회가 여전히 render()에 남아있던 걸 발견).
+        // render()는 여기서 만든 텍스처와 점 목록을 그대로 그리기만 한다.
         if (texture == null) {
             texture = new NativeImageBackedTexture(TEXTURE_SIZE, TEXTURE_SIZE, true);
             client.getTextureManager().registerTexture(TEXTURE_ID, texture);
         }
 
-        double playerX = client.player.getX();
-        double playerZ = client.player.getZ();
         int[] pixels = MinimapCompositor.composite(TEXTURE_SIZE, RADIUS_BLOCKS, playerX, playerZ, chunkCache);
         stampArrow(pixels, client.player.getYaw());
 
@@ -98,6 +105,13 @@ public class TerrainMinimap implements PositionedHudFeature {
             }
         }
         texture.upload();
+
+        // 지형과 같은 스냅된 기준점을 써야 엔티티 점이 지형과 같은 시점에 갱신된다 — 따로
+        // playerX/playerZ를 그대로 쓰면 지형은 픽셀 단위로만 갱신되는데 점은 매끄럽게 움직여서
+        // 서로 어긋나 보인다(최종 리뷰에서 발견).
+        double snappedPlayerX = MinimapCompositor.snapToPixelGrid(playerX, TEXTURE_SIZE, RADIUS_BLOCKS);
+        double snappedPlayerZ = MinimapCompositor.snapToPixelGrid(playerZ, TEXTURE_SIZE, RADIUS_BLOCKS);
+        cachedDots = computeDots(client, snappedPlayerX, snappedPlayerZ);
     }
 
     // 모드 목록 화면의 체크박스(ModListScreen.onToggle)와 정확히 같은 read-modify-write
@@ -125,12 +139,12 @@ public class TerrainMinimap implements PositionedHudFeature {
             return;
         }
 
-        double playerX = client.player.getX();
-        double playerZ = client.player.getZ();
         HudRenderUtil.drawScaled(context, pos, (ctx, x, y) -> {
             ctx.drawTexture(RenderLayer::getGuiTextured, TEXTURE_ID,
                 x, y, 0f, 0f, TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE);
-            drawEntityDots(ctx, x, y, client, playerX, playerZ);
+            for (Dot dot : cachedDots) {
+                ctx.fill(x + dot.px() - 1, y + dot.py() - 1, x + dot.px() + 1, y + dot.py() + 1, dot.argb());
+            }
         });
     }
 
@@ -150,30 +164,34 @@ public class TerrainMinimap implements PositionedHudFeature {
         }
     }
 
-    private void drawEntityDots(DrawContext ctx, int x, int y, MinecraftClient client,
-                                 double playerX, double playerZ) {
+    // 화면 픽셀 오프셋(px,py, 텍스처 로컬 좌표계)과 색을 미리 계산해둔 스냅샷 — render()는
+    // 이걸 그리기만 하고 엔티티 조회는 하지 않는다.
+    private record Dot(int px, int py, int argb) {}
+
+    private List<Dot> computeDots(MinecraftClient client, double snappedPlayerX, double snappedPlayerZ) {
         double playerY = client.player.getY();
         Box searchBox = new Box(
-            playerX - RADIUS_BLOCKS, playerY - 64, playerZ - RADIUS_BLOCKS,
-            playerX + RADIUS_BLOCKS, playerY + 64, playerZ + RADIUS_BLOCKS);
+            snappedPlayerX - RADIUS_BLOCKS, playerY - 64, snappedPlayerZ - RADIUS_BLOCKS,
+            snappedPlayerX + RADIUS_BLOCKS, playerY + 64, snappedPlayerZ + RADIUS_BLOCKS);
         List<Entity> nearby = client.world.getOtherEntities(client.player, searchBox,
             entity -> entity instanceof LivingEntity);
 
         double half = TEXTURE_SIZE / 2.0;
         double blocksPerPixel = RADIUS_BLOCKS / half;
+        List<Dot> dots = new ArrayList<>();
         for (Entity entity : nearby) {
-            double dx = entity.getX() - playerX;
-            double dz = entity.getZ() - playerZ;
+            double dx = entity.getX() - snappedPlayerX;
+            double dz = entity.getZ() - snappedPlayerZ;
             if (!MinimapMath.isColumnWithinRadius(dx, dz, RADIUS_BLOCKS)) {
                 continue;
             }
             EntityBlipClassifier.BlipColor blip = EntityBlipClassifier.classify(
                 entity instanceof PlayerEntity, entity instanceof Monster);
-            int color = blipArgb(blip);
-            int px = x + (int) (dx / blocksPerPixel + half);
-            int pz = y + (int) (dz / blocksPerPixel + half);
-            ctx.fill(px - 1, pz - 1, px + 1, pz + 1, color);
+            int px = (int) (dx / blocksPerPixel + half);
+            int py = (int) (dz / blocksPerPixel + half);
+            dots.add(new Dot(px, py, blipArgb(blip)));
         }
+        return dots;
     }
 
     private static int blipArgb(EntityBlipClassifier.BlipColor blip) {
@@ -191,7 +209,7 @@ public class TerrainMinimap implements PositionedHudFeature {
 
     @Override
     public String displayName() {
-        return "미니맵";
+        return "미니맵 (M키)";
     }
 
     @Override
