@@ -44,18 +44,24 @@ docs/superpowers/plans/   지금까지의 구현 계획 (파일별 작업 목록
 
 - **Sub-project A**: 런처 인증·실행 파이프라인 (Microsoft OAuth, 버전 다운로드, Fabric 설치, 오프라인 실행 차단) — 완료.
 - **Sub-project B (모드팩)**, 서브 단계별로:
-  - B0: 모드 골격 + 인게임 모드 목록 화면
+  - B0: 모드 골격 + 인게임 모드 목록 화면 + **FPS 표시**
   - B1: HUD 프레임워크(위치·크기 드래그 편집기) + 속도/CPS/성능 표시
-  - B2: 리소스팩 표시, 갑옷·도구 내구도, 서버 핑, Combo Counter
-  - B3: 조작 — Toggle Sprint, C키 Zoom(진짜 8배, **이 프로젝트 유일한 믹신** 포함 — `GameRendererMixin`)
+  - B2: 리소스팩 표시, 갑옷·도구 내구도, **서버 접속 시 핑 표시**, Combo Counter
+  - B3: 조작 — Toggle Sprint, C키 Zoom(진짜 8배, **이 프로젝트 유일한 믹신** 포함 — `GameRendererMixin`). **Toggle Sneak는 사용자가 브레인스토밍 중 명시적으로 범위에서 뺐다**("웅크리기 없이 달리기만") — 빠진 게 아니라 의도적으로 안 만든 것이니 다시 물어보지 않는 한 만들지 말 것.
   - B4: 원형 지형 미니맵(M키 토글, 북쪽 고정, 반경 96블록, 엔티티 점, 방향 화살표)
 
-전부 완료·실기기(실제 게임 실행)로 검증·`origin/master`에 푸시 완료 상태다. 최신 커밋은 `eb65f2d`.
+전부 완료·실기기(실제 게임 실행)로 검증·`origin/master`에 푸시 완료 상태다. 최신 커밋은 `aa0c02f`(이 문서를 추가한 커밋 자체가 최신).
+
+실제 등록된 기능 클래스 11개(`mod/src/main/java/com/cubeclient/mod/CubeClientModClient.java`의 `registry.register(...)` 목록과 정확히 일치): `FpsDisplay`, `SpeedDisplay`, `CpsDisplay`, `PerformanceDisplay`, `ResourcePackDisplay`, `DurabilityDisplay`, `PingDisplay`, `ComboCounter`, `ToggleSprint`, `ZoomKey`, `TerrainMinimap`. 새 기능을 시작하기 전에 이 목록과 실제 파일을 먼저 확인해서 중복 작업을 피할 것.
 
 ## 다음 작업 후보 (아직 설계 안 됨, 처음부터 대화로 시작할 것)
 
+2026-07-27에 사용자가 처음 요청한 기능 목록 중 아직 안 만든 건 이 두 개뿐이다:
+
 - **B5 — 죽은 위치 표시**: 사용자가 먼저 제안한 아이디어는 "죽은 자리에 수직선(빔)을 그어서 표시"하는 것. 그 외엔 아직 아무것도 정해진 게 없다 — 화면에 텍스트로도 표시할지, 얼마나 오래 보일지, 다른 차원에서 죽으면 어떻게 할지 등 전부 사용자와 대화로 좁혀야 한다.
-- **B6 — 서버 리스트·핑**: 아직 착수 전.
+- **B6 — 서버 리스트**: "서버 목록·핑" 중 **핑 표시는 B2에서 이미 끝났다**(`PingDisplay`, 접속한 서버의 핑을 화면에 표시). 안 만든 건 **서버 목록 UI**(접속할 서버들을 골라 빠르게 연결하는 화면) 쪽이다 — 이것도 아직 착수 전.
+
+원래 요청 목록 전체(참고용): 미니맵(M키)→B4 / 죽은 위치 표시→B5(예정) / FPS→B0 / 리소스팩 표시→B2 / 서버 리스트→B6(예정) / CPS→B1 / Toggle Sneak→명시적으로 제외 / Toggle Sprint→B3 / C키 Zoom→B3 / 갑옷·도구 내구도→B2 / 서버 접속 시 핑 표시→B2 / Combo Counter→B2 / 인게임에서 개별 켜고 끄기→B0(모드 목록 화면).
 
 ## 권장 작업 방식
 
