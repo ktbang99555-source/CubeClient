@@ -23,9 +23,13 @@ import java.io.IOException;
 import java.util.List;
 
 public class DeathLocationDisplay implements Feature {
+    public static final String FEATURE_ID = "death_location";
+
     // 실기기에서 눈으로 보고 조정할 값들 — BeaconBlockEntityRenderer.renderBeam의 정확한 단위가
     // 시그니처만으론 확정 안 됨(위 "확인 안 된 채 남겨두는 것" 참고).
-    private static final int BEAM_COLOR = 0xFF0000;
+    // VertexConsumer.color(int)는 ARGB로 해석하므로 alpha 바이트를 반드시 채워야 한다 —
+    // 0xFF0000은 alpha=0x00이라 완전 투명(최종 리뷰에서 발견).
+    private static final int BEAM_COLOR = 0xFFFF0000;
     private static final float BEAM_WIDTH_SCALE = 0.4f;
     private static final float BEAM_GLOW_SCALE = 0.25f;
     private static final int BEAM_MAX_HEIGHT = 320;
@@ -44,6 +48,10 @@ public class DeathLocationDisplay implements Feature {
 
     private void onTick(MinecraftClient client) {
         if (client.player == null || client.world == null) {
+            // 월드/서버를 나간 동안 lastHealth를 그대로 두면, 다음 월드에 낮은 체력으로
+            // 재접속했을 때 20 -> 낮은값으로 오인되어 새 월드 로그인 좌표에 가짜 죽음이
+            // 기록될 수 있다(최종 리뷰에서 발견). 안전값으로 리셋.
+            lastHealth = 1f;
             return;
         }
         float currentHealth = client.player.getHealth();
@@ -86,8 +94,14 @@ public class DeathLocationDisplay implements Feature {
 
         for (DeathLocation location : visible) {
             matrices.push();
+            // renderBeam은 내부적으로 블록 모서리 원점 기준 matrices.translate(0.5, 0.0, 0.5)를
+            // 추가로 한다(바닐라 비콘 블록엔티티가 정수 블록 좌표에서 호출되기 때문). 죽은 위치의
+            // 소수점 포함 엔티티 좌표를 그대로 넘기면 최종적으로 (x+0.5, z+0.5)만큼 어긋나므로
+            // x/z만 블록 좌표로 내림 처리한다 — y는 어긋남과 무관하므로 그대로 둔다.
             matrices.translate(
-                location.x() - cameraPos.x, location.y() - cameraPos.y, location.z() - cameraPos.z);
+                Math.floor(location.x()) - cameraPos.x,
+                location.y() - cameraPos.y,
+                Math.floor(location.z()) - cameraPos.z);
             BeaconBlockEntityRenderer.renderBeam(
                 matrices, consumers, BeaconBlockEntityRenderer.BEAM_TEXTURE,
                 tickDelta, 1.0f, worldTime, 0, BEAM_MAX_HEIGHT, BEAM_COLOR,
@@ -98,7 +112,7 @@ public class DeathLocationDisplay implements Feature {
 
     @Override
     public String id() {
-        return "death_location";
+        return FEATURE_ID;
     }
 
     @Override

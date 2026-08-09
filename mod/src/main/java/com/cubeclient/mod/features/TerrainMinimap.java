@@ -6,6 +6,7 @@ import com.cubeclient.mod.death.DeathLocation;
 import com.cubeclient.mod.death.DeathLocationFilter;
 import com.cubeclient.mod.death.DeathLocationStore;
 import com.cubeclient.mod.death.WorldIdentity;
+import com.cubeclient.mod.features.DeathLocationDisplay;
 import com.cubeclient.mod.gui.HudPosition;
 import com.cubeclient.mod.gui.HudRenderUtil;
 import com.cubeclient.mod.minimap.ArrowShape;
@@ -204,6 +205,13 @@ public class TerrainMinimap implements PositionedHudFeature {
     private static final int DEATH_MARKER_ARGB = 0xFF9B59B6;
 
     private void addDeathDots(List<Dot> dots, MinecraftClient client, double snappedPlayerX, double snappedPlayerZ) {
+        // 미니맵 자신의 켜짐 여부는 이미 onTick 초반에 확인했지만, 죽은위치 기능은 별도
+        // 토글이다 — 데이터는 DeathLocationStore에 계속 남아있으므로(그게 B5의 핵심,
+        // 사용자가 "전체 삭제"하기 전까진 유지) 이 가드가 없으면 기능을 꺼도 미니맵 점이
+        // 계속 보인다(최종 리뷰에서 발견). 설계 스펙: 두 토글 다 걸려야 함.
+        if (!cachedConfig.current().isEnabled(DeathLocationDisplay.FEATURE_ID)) {
+            return;
+        }
         String worldId = WorldIdentity.currentWorldId(client);
         String dimensionId = WorldIdentity.currentDimensionId(client.world);
         List<DeathLocation> visible =
