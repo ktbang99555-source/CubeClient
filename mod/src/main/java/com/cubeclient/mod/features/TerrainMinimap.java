@@ -2,6 +2,10 @@ package com.cubeclient.mod.features;
 
 import com.cubeclient.mod.config.CachedConfig;
 import com.cubeclient.mod.config.ModConfig;
+import com.cubeclient.mod.death.DeathLocation;
+import com.cubeclient.mod.death.DeathLocationFilter;
+import com.cubeclient.mod.death.DeathLocationStore;
+import com.cubeclient.mod.death.WorldIdentity;
 import com.cubeclient.mod.gui.HudPosition;
 import com.cubeclient.mod.gui.HudRenderUtil;
 import com.cubeclient.mod.minimap.ArrowShape;
@@ -47,13 +51,15 @@ public class TerrainMinimap implements PositionedHudFeature {
 
     private final CachedConfig cachedConfig;
     private final MinimapChunkCache chunkCache = new MinimapChunkCache();
+    private final DeathLocationStore deathLocationStore;
     private final KeyBinding minimapKey;
     private NativeImageBackedTexture texture;
     private boolean minimapKeyWasDown;
     private List<Dot> cachedDots = List.of();
 
-    public TerrainMinimap(CachedConfig cachedConfig) {
+    public TerrainMinimap(CachedConfig cachedConfig, DeathLocationStore deathLocationStore) {
         this.cachedConfig = cachedConfig;
+        this.deathLocationStore = deathLocationStore;
         // M키는 B3의 C키와 달리 실제 실행 중인 인스턴스의 options.txt에서 확인한 결과 바닐라
         // 기본 키와 겹치지 않는다 — InputUtil.isKeyPressed 우회 없이 KeyBinding.isPressed()를
         // 그대로 써도 된다(위 "검증된 API 시그니처" 참고).
@@ -191,7 +197,30 @@ public class TerrainMinimap implements PositionedHudFeature {
             int py = (int) (dz / blocksPerPixel + half);
             dots.add(new Dot(px, py, blipArgb(blip)));
         }
+        addDeathDots(dots, client, snappedPlayerX, snappedPlayerZ);
         return dots;
+    }
+
+    private static final int DEATH_MARKER_ARGB = 0xFF9B59B6;
+
+    private void addDeathDots(List<Dot> dots, MinecraftClient client, double snappedPlayerX, double snappedPlayerZ) {
+        String worldId = WorldIdentity.currentWorldId(client);
+        String dimensionId = WorldIdentity.currentDimensionId(client.world);
+        List<DeathLocation> visible =
+            DeathLocationFilter.forCurrentWorld(deathLocationStore.getAll(), worldId, dimensionId);
+
+        double half = TEXTURE_SIZE / 2.0;
+        double blocksPerPixel = RADIUS_BLOCKS / half;
+        for (DeathLocation location : visible) {
+            double dx = location.x() - snappedPlayerX;
+            double dz = location.z() - snappedPlayerZ;
+            if (!MinimapMath.isColumnWithinRadius(dx, dz, RADIUS_BLOCKS)) {
+                continue;
+            }
+            int px = (int) (dx / blocksPerPixel + half);
+            int py = (int) (dz / blocksPerPixel + half);
+            dots.add(new Dot(px, py, DEATH_MARKER_ARGB));
+        }
     }
 
     private static int blipArgb(EntityBlipClassifier.BlipColor blip) {
