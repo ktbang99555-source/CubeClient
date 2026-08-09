@@ -1,6 +1,7 @@
 package com.cubeclient.mod.gui;
 
 import com.cubeclient.mod.config.CachedConfig;
+import com.cubeclient.mod.death.DeathLocationStore;
 import com.cubeclient.mod.registry.FeatureRegistry;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.Screens;
@@ -36,14 +37,15 @@ public final class ClientSettingsButton {
     private static final int ROW_GAP = 4;
     private static final int BOTTOM_MARGIN = 8;
 
-    public static void register(FeatureRegistry registry, CachedConfig cachedConfig) {
+    public static void register(FeatureRegistry registry, CachedConfig cachedConfig,
+                                 DeathLocationStore deathLocationStore) {
         ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
             if (screen instanceof TitleScreen || screen instanceof GameMenuScreen) {
                 addButton(
                     screen,
                     scaledWidth / 2 - BUTTON_WIDTH / 2,
                     rowBelowExistingButtons(screen, scaledHeight),
-                    registry, cachedConfig);
+                    registry, cachedConfig, deathLocationStore);
             }
         });
     }
@@ -71,10 +73,11 @@ public final class ClientSettingsButton {
     }
 
     private static void addButton(Screen screen, int x, int y,
-                                   FeatureRegistry registry, CachedConfig cachedConfig) {
+                                   FeatureRegistry registry, CachedConfig cachedConfig,
+                                   DeathLocationStore deathLocationStore) {
         ButtonWidget button = ButtonWidget.builder(Text.literal("클라이언트 설정"), b -> {
             MinecraftClient client = MinecraftClient.getInstance();
-            client.setScreen(new ModListScreen(screen, registry, cachedConfig));
+            client.setScreen(new ModListScreen(screen, registry, cachedConfig, deathLocationStore));
         }).dimensions(x, y, BUTTON_WIDTH, BUTTON_HEIGHT).build();
 
         Screens.getButtons(screen).add(button);

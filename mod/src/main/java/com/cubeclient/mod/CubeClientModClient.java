@@ -2,8 +2,10 @@ package com.cubeclient.mod;
 
 import com.cubeclient.mod.config.CachedConfig;
 import com.cubeclient.mod.config.ConfigStore;
+import com.cubeclient.mod.death.DeathLocationStore;
 import com.cubeclient.mod.features.ComboCounter;
 import com.cubeclient.mod.features.CpsDisplay;
+import com.cubeclient.mod.features.DeathLocationDisplay;
 import com.cubeclient.mod.features.DurabilityDisplay;
 import com.cubeclient.mod.features.FpsDisplay;
 import com.cubeclient.mod.features.PerformanceDisplay;
@@ -30,6 +32,8 @@ public class CubeClientModClient implements ClientModInitializer {
         Path fallback = FabricLoader.getInstance().getConfigDir().resolve("cubeclient");
         Path configFile = ConfigStore.resolveConfigDir(fallback).resolve("mod-config.json");
         CachedConfig cachedConfig = new CachedConfig(new ConfigStore(configFile));
+        Path deathLocationsFile = ConfigStore.resolveConfigDir(fallback).resolve("death-locations.json");
+        DeathLocationStore deathLocationStore = new DeathLocationStore(deathLocationsFile);
 
         FeatureRegistry registry = new FeatureRegistry();
         registry.register(new FpsDisplay());
@@ -42,9 +46,10 @@ public class CubeClientModClient implements ClientModInitializer {
         registry.register(new ComboCounter());
         registry.register(new ToggleSprint(cachedConfig));
         registry.register(new ZoomKey(cachedConfig));
-        registry.register(new TerrainMinimap(cachedConfig));
+        registry.register(new TerrainMinimap(cachedConfig, deathLocationStore));
+        registry.register(new DeathLocationDisplay(cachedConfig, deathLocationStore));
 
-        ClientSettingsButton.register(registry, cachedConfig);
+        ClientSettingsButton.register(registry, cachedConfig, deathLocationStore);
 
         // HudRenderCallback은 사용 중인 Fabric API 버전에서 @Deprecated로 표시되어 있다
         // (jar를 풀어 javap -v로 RuntimeVisibleAnnotations에서 확인함). 대체 API인

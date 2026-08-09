@@ -34,6 +34,7 @@ public class ModListScreen extends Screen {
     private final Screen parent;
     private final FeatureRegistry registry;
     private final CachedConfig cachedConfig;
+    private final com.cubeclient.mod.death.DeathLocationStore deathLocationStore;
 
     private ModConfig config;
     private Category activeCategory; // null = 전부
@@ -55,11 +56,13 @@ public class ModListScreen extends Screen {
     private int scrollOffset;
     private static final int SCROLL_STEP = 20;
 
-    public ModListScreen(Screen parent, FeatureRegistry registry, CachedConfig cachedConfig) {
+    public ModListScreen(Screen parent, FeatureRegistry registry, CachedConfig cachedConfig,
+                          com.cubeclient.mod.death.DeathLocationStore deathLocationStore) {
         super(Text.literal("클라이언트 설정"));
         this.parent = parent;
         this.registry = registry;
         this.cachedConfig = cachedConfig;
+        this.deathLocationStore = deathLocationStore;
     }
 
     @Override
@@ -110,6 +113,10 @@ public class ModListScreen extends Screen {
             rebuildQueued = true;
         });
         addDrawableChild(searchField);
+
+        addDrawableChild(ButtonWidget.builder(Text.literal("죽은 위치 전체 삭제"), b -> clearDeathLocations())
+            .dimensions(width - 160 - MARGIN, height - 20 - 8, 160, 20)
+            .build());
 
         rebuildCards();
     }
@@ -185,6 +192,17 @@ public class ModListScreen extends Screen {
             if (client != null && client.player != null) {
                 client.player.sendMessage(
                     Text.literal("설정을 저장하지 못했습니다: " + e.getMessage()), false);
+            }
+        }
+    }
+
+    private void clearDeathLocations() {
+        try {
+            deathLocationStore.clearAll();
+        } catch (IOException e) {
+            if (client != null && client.player != null) {
+                client.player.sendMessage(
+                    Text.literal("죽은 위치를 삭제하지 못했습니다: " + e.getMessage()), false);
             }
         }
     }
