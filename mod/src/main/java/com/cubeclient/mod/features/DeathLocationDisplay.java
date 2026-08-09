@@ -43,7 +43,7 @@ public class DeathLocationDisplay implements Feature {
     }
 
     private void onTick(MinecraftClient client) {
-        if (client.player == null) {
+        if (client.player == null || client.world == null) {
             return;
         }
         float currentHealth = client.player.getHealth();
