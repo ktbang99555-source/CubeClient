@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonSyntaxException;
 
 import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -39,7 +40,20 @@ public class ConfigStore {
         if (configFile.getParent() != null) {
             Files.createDirectories(configFile.getParent());
         }
-        Files.writeString(configFile, GSON.toJson(config));
+        // 임시 파일에 먼저 쓰고 옮긴다 — 게임이 저장 도중 죽거나(크래시, 강제종료) 디스크가
+        // 꽉 차면, configFile을 직접 write하는 경우 반쯤 쓰인 손상 JSON이 남아 다음 실행에서
+        // load()가 그걸 .bak으로 보존하고 빈 설정으로 돌아간다 — 사용자의 실제 설정을 잃는다.
+        // 임시 파일 쓰기가 중간에 실패해도 원본 configFile은 그대로 남는다.
+        Path tempFile = configFile.resolveSibling(configFile.getFileName() + ".tmp");
+        Files.writeString(tempFile, GSON.toJson(config));
+        try {
+            Files.move(tempFile, configFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            // 일부 파일시스템(네트워크 드라이브 등)은 원자적 이동을 지원하지 않는다 — 그 경우
+            // 비원자적 이동으로 폴백(그래도 직접 write보다는 안전: 임시 파일이 완전히 다
+            // 쓰인 뒤에만 옮긴다).
+            Files.move(tempFile, configFile, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     /**

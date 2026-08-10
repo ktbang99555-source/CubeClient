@@ -133,6 +133,23 @@ class ConfigStoreTest {
     }
 
     @Test
+    void savingTwiceInARowLeavesOnlyTheSecondValueAndNoLeftoverTempFile() throws IOException {
+        // save()가 이제 임시 파일에 먼저 쓰고 옮기는 방식이라(atomic move), 같은 인스턴스로
+        // 반복 저장했을 때 임시 파일이 실수로 남거나 두 번째 저장이 첫 번째 걸 덮어쓰지 못하는
+        // 회귀가 없는지 확인한다.
+        Path file = tempDir.resolve("mod-config.json");
+        ConfigStore store = new ConfigStore(file);
+
+        store.save(new ModConfig(Map.of("fps", true), Set.of(), Map.of()));
+        store.save(new ModConfig(Map.of("fps", false), Set.of(), Map.of()));
+
+        ModConfig loaded = store.load();
+        assertFalse(loaded.isEnabled("fps"));
+        assertFalse(Files.exists(tempDir.resolve("mod-config.json.tmp")),
+            "the temp file used for the atomic write should not be left behind");
+    }
+
+    @Test
     void savingCreatesParentDirectories() throws IOException {
         Path file = tempDir.resolve("nested").resolve("mod-config.json");
         ConfigStore store = new ConfigStore(file);
