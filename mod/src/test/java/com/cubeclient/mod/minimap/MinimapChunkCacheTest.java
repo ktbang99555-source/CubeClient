@@ -15,7 +15,7 @@ class MinimapChunkCacheTest {
         int[] calls = {0};
         MinimapChunkCache cache = new MinimapChunkCache((world, coord) -> {
             calls[0]++;
-            return new int[256];
+            return filledChunk(0xFF112233);
         }, (world, coord) -> true);
         Set<ChunkCoord> needed = new LinkedHashSet<>();
         needed.add(new ChunkCoord(0, 0));
@@ -109,5 +109,61 @@ class MinimapChunkCacheTest {
         cache.tick(null, World.OVERWORLD, Set.of(new ChunkCoord(0, 0)));
         assertEquals(1, calls[0]);
         assertEquals(0xFFAABBCC, cache.colorAt(0, 0));
+    }
+
+    @Test
+    void allUnknownSampleIsNotCachedAndIsRetriedOnLaterTicks() {
+        // 실기기 버그 재현: 청크가 isChunkLoaded는 통과했는데 컬럼이 하나도 안 읽히는 순간이
+        // 있다. 그 결과를 캐시하면 캐시는 차원/월드가 바뀔 때까지 다시 안 읽으므로, 검은/빈
+        // 사각형이 재접속 전까지 그대로 남았다. 저장을 건너뛰어야 다음 틱에 스스로 낫는다.
+        int[] calls = {0};
+        boolean[] readable = {false};
+        MinimapChunkCache cache = new MinimapChunkCache(
+            (world, coord) -> {
+                calls[0]++;
+                return readable[0] ? filledChunk(0xFF445566) : new int[256];
+            },
+            (world, coord) -> true
+        );
+        Set<ChunkCoord> needed = Set.of(new ChunkCoord(0, 0));
+
+        cache.tick(null, World.OVERWORLD, needed);
+        assertEquals(1, calls[0]);
+        assertEquals(0, cache.colorAt(0, 0), "안 읽힌 샘플은 캐시에 남으면 안 된다");
+
+        cache.tick(null, World.OVERWORLD, needed);
+        assertEquals(2, calls[0], "캐시가 비어 있으니 다음 틱에 다시 시도해야 한다");
+
+        readable[0] = true;
+        cache.tick(null, World.OVERWORLD, needed);
+        assertEquals(0xFF445566, cache.colorAt(0, 0));
+    }
+
+    @Test
+    void anUnknownSampleStillCostsTheTicksBudget() {
+        // 안 읽힌 청크를 만나도 그 틱엔 거기서 멈춘다 — 안 그러면 로딩 중 청크가 여러 개일 때
+        // 한 틱에 여러 번 샘플링해서 "한 틱에 청크 하나" 예산을 깨뜨린다.
+        int[] calls = {0};
+        MinimapChunkCache cache = new MinimapChunkCache(
+            (world, coord) -> {
+                calls[0]++;
+                return new int[256];
+            },
+            (world, coord) -> true
+        );
+        Set<ChunkCoord> needed = new LinkedHashSet<>();
+        needed.add(new ChunkCoord(0, 0));
+        needed.add(new ChunkCoord(1, 0));
+        needed.add(new ChunkCoord(2, 0));
+
+        cache.tick(null, World.OVERWORLD, needed);
+
+        assertEquals(1, calls[0]);
+    }
+
+    private static int[] filledChunk(int argb) {
+        int[] colors = new int[256];
+        java.util.Arrays.fill(colors, argb);
+        return colors;
     }
 }
