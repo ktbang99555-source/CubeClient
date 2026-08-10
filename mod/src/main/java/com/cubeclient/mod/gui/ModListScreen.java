@@ -30,6 +30,11 @@ public class ModListScreen extends Screen {
     private static final int TAB_HEIGHT = 20;
     /** Below the title, the tab row, and the search row. */
     private static final int GRID_TOP = 80;
+    /** Space reserved at the bottom for the "죽은 위치 전체 삭제" button (height + its own margin
+     * + a gap above it) — computeMaxScroll must stop the grid short of this or a scrolled-down
+     * card row draws under/behind the button, since cards have no bottom scissor (only a top one,
+     * see FeatureCard). */
+    private static final int BOTTOM_BUTTON_AREA = 36;
 
     private final Screen parent;
     private final FeatureRegistry registry;
@@ -241,7 +246,7 @@ public class ModListScreen extends Screen {
         int rows = (visible.size() + columns - 1) / columns;
         int cardHeight = 90;
         int totalContentHeight = rows * (cardHeight + gap);
-        int visibleHeight = height - GRID_TOP - MARGIN;
+        int visibleHeight = height - GRID_TOP - BOTTOM_BUTTON_AREA;
         return Math.max(0, totalContentHeight - visibleHeight);
     }
 
