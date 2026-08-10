@@ -1,4 +1,3 @@
-// mod/src/test/java/com/cubeclient/mod/minimap/MinimapCompositorTest.java
 package com.cubeclient.mod.minimap;
 
 import org.junit.jupiter.api.Test;

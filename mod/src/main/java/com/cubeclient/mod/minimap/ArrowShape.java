@@ -1,4 +1,3 @@
-// mod/src/main/java/com/cubeclient/mod/minimap/ArrowShape.java
 package com.cubeclient.mod.minimap;
 
 /** 미니맵 중심에 그리는 플레이어 화살표의 순수 도형 판정. yaw 부호 관례는 바닐라

@@ -1,4 +1,3 @@
-// mod/src/main/java/com/cubeclient/mod/minimap/MinimapCompositor.java
 package com.cubeclient.mod.minimap;
 
 /** 캐시된 청크 색상 데이터를 플레이어 중심 원형 이미지로 합성한다. Minecraft 객체에 의존하지
