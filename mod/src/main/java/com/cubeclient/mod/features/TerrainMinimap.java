@@ -6,7 +6,6 @@ import com.cubeclient.mod.death.DeathLocation;
 import com.cubeclient.mod.death.DeathLocationFilter;
 import com.cubeclient.mod.death.DeathLocationStore;
 import com.cubeclient.mod.death.WorldIdentity;
-import com.cubeclient.mod.features.DeathLocationDisplay;
 import com.cubeclient.mod.gui.HudPosition;
 import com.cubeclient.mod.gui.HudRenderUtil;
 import com.cubeclient.mod.minimap.ArrowShape;
@@ -48,7 +47,10 @@ public class TerrainMinimap implements PositionedHudFeature {
     private static final double RADIUS_BLOCKS = 96.0;
     private static final int ARROW_BOX = 8;
     private static final int ARROW_ARGB = 0xFF2FA968;
+    private static final int DEATH_MARKER_ARGB = 0xFF9B59B6;
     private static final Identifier TEXTURE_ID = Identifier.of("cubeclient", "minimap_composite");
+    private static final double HALF_TEXTURE = TEXTURE_SIZE / 2.0;
+    private static final double BLOCKS_PER_PIXEL = RADIUS_BLOCKS / HALF_TEXTURE;
 
     private final CachedConfig cachedConfig;
     private final MinimapChunkCache chunkCache = new MinimapChunkCache();
@@ -183,8 +185,6 @@ public class TerrainMinimap implements PositionedHudFeature {
         List<Entity> nearby = client.world.getOtherEntities(client.player, searchBox,
             entity -> entity instanceof LivingEntity);
 
-        double half = TEXTURE_SIZE / 2.0;
-        double blocksPerPixel = RADIUS_BLOCKS / half;
         List<Dot> dots = new ArrayList<>();
         for (Entity entity : nearby) {
             double dx = entity.getX() - snappedPlayerX;
@@ -194,15 +194,11 @@ public class TerrainMinimap implements PositionedHudFeature {
             }
             EntityBlipClassifier.BlipColor blip = EntityBlipClassifier.classify(
                 entity instanceof PlayerEntity, entity instanceof Monster);
-            int px = (int) (dx / blocksPerPixel + half);
-            int py = (int) (dz / blocksPerPixel + half);
-            dots.add(new Dot(px, py, blipArgb(blip)));
+            dots.add(dotAt(dx, dz, blipArgb(blip)));
         }
         addDeathDots(dots, client, snappedPlayerX, snappedPlayerZ);
         return dots;
     }
-
-    private static final int DEATH_MARKER_ARGB = 0xFF9B59B6;
 
     private void addDeathDots(List<Dot> dots, MinecraftClient client, double snappedPlayerX, double snappedPlayerZ) {
         // 미니맵 자신의 켜짐 여부는 이미 onTick 초반에 확인했지만, 죽은위치 기능은 별도
@@ -217,18 +213,23 @@ public class TerrainMinimap implements PositionedHudFeature {
         List<DeathLocation> visible =
             DeathLocationFilter.forCurrentWorld(deathLocationStore.getAll(), worldId, dimensionId);
 
-        double half = TEXTURE_SIZE / 2.0;
-        double blocksPerPixel = RADIUS_BLOCKS / half;
         for (DeathLocation location : visible) {
             double dx = location.x() - snappedPlayerX;
             double dz = location.z() - snappedPlayerZ;
             if (!MinimapMath.isColumnWithinRadius(dx, dz, RADIUS_BLOCKS)) {
                 continue;
             }
-            int px = (int) (dx / blocksPerPixel + half);
-            int py = (int) (dz / blocksPerPixel + half);
-            dots.add(new Dot(px, py, DEATH_MARKER_ARGB));
+            dots.add(dotAt(dx, dz, DEATH_MARKER_ARGB));
         }
+    }
+
+    /** 플레이어 기준 블록 오프셋(dx,dz)을 텍스처 로컬 픽셀 좌표의 Dot으로 바꾼다 — 엔티티 점과
+     * 죽은위치 점이 같은 공식을 썼는데도 따로 들고 있어서 어긋날 뻔했다(둘 다 HALF_TEXTURE/
+     * BLOCKS_PER_PIXEL를 각자 지역변수로 다시 계산하던 걸 여기 하나로 합침). */
+    private static Dot dotAt(double dx, double dz, int argb) {
+        int px = (int) (dx / BLOCKS_PER_PIXEL + HALF_TEXTURE);
+        int py = (int) (dz / BLOCKS_PER_PIXEL + HALF_TEXTURE);
+        return new Dot(px, py, argb);
     }
 
     private static int blipArgb(EntityBlipClassifier.BlipColor blip) {

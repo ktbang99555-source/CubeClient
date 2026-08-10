@@ -32,7 +32,6 @@ public class DeathLocationDisplay implements Feature {
     private static final int BEAM_COLOR = 0xFFFF0000;
     private static final float BEAM_WIDTH_SCALE = 0.4f;
     private static final float BEAM_GLOW_SCALE = 0.25f;
-    private static final int BEAM_MAX_HEIGHT = 320;
 
     private final CachedConfig cachedConfig;
     private final DeathLocationStore store;
@@ -104,7 +103,7 @@ public class DeathLocationDisplay implements Feature {
                 Math.floor(location.z()) - cameraPos.z);
             BeaconBlockEntityRenderer.renderBeam(
                 matrices, consumers, BeaconBlockEntityRenderer.BEAM_TEXTURE,
-                tickDelta, 1.0f, worldTime, 0, BEAM_MAX_HEIGHT, BEAM_COLOR,
+                tickDelta, 1.0f, worldTime, 0, BeaconBlockEntityRenderer.MAX_BEAM_HEIGHT, BEAM_COLOR,
                 BEAM_WIDTH_SCALE, BEAM_GLOW_SCALE);
             matrices.pop();
         }
