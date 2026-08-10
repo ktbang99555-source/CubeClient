@@ -2,6 +2,7 @@ package com.cubeclient.mod.gui;
 
 import com.cubeclient.mod.config.CachedConfig;
 import com.cubeclient.mod.config.ModConfig;
+import com.cubeclient.mod.death.DeathLocationStore;
 import com.cubeclient.mod.registry.Category;
 import com.cubeclient.mod.registry.Feature;
 import com.cubeclient.mod.registry.FeatureRegistry;
@@ -10,6 +11,8 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -26,6 +29,8 @@ import java.util.Set;
  * button, which this screen doesn't have) must not lose a toggle the player already made.
  */
 public class ModListScreen extends Screen {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ModListScreen.class);
+
     private static final int MARGIN = 12;
     private static final int TAB_HEIGHT = 20;
     /** Below the title, the tab row, and the search row. */
@@ -39,7 +44,7 @@ public class ModListScreen extends Screen {
     private final Screen parent;
     private final FeatureRegistry registry;
     private final CachedConfig cachedConfig;
-    private final com.cubeclient.mod.death.DeathLocationStore deathLocationStore;
+    private final DeathLocationStore deathLocationStore;
 
     private ModConfig config;
     private Category activeCategory; // null = 전부
@@ -62,7 +67,7 @@ public class ModListScreen extends Screen {
     private static final int SCROLL_STEP = 20;
 
     public ModListScreen(Screen parent, FeatureRegistry registry, CachedConfig cachedConfig,
-                          com.cubeclient.mod.death.DeathLocationStore deathLocationStore) {
+                          DeathLocationStore deathLocationStore) {
         super(Text.literal("클라이언트 설정"));
         this.parent = parent;
         this.registry = registry;
@@ -194,10 +199,7 @@ public class ModListScreen extends Screen {
         try {
             cachedConfig.save(config);
         } catch (IOException e) {
-            if (client != null && client.player != null) {
-                client.player.sendMessage(
-                    Text.literal("설정을 저장하지 못했습니다: " + e.getMessage()), false);
-            }
+            reportSaveFailure("설정을 저장하지 못했습니다: " + e.getMessage(), e);
         }
     }
 
@@ -205,10 +207,18 @@ public class ModListScreen extends Screen {
         try {
             deathLocationStore.clearAll();
         } catch (IOException e) {
-            if (client != null && client.player != null) {
-                client.player.sendMessage(
-                    Text.literal("죽은 위치를 삭제하지 못했습니다: " + e.getMessage()), false);
-            }
+            reportSaveFailure("죽은 위치를 삭제하지 못했습니다: " + e.getMessage(), e);
+        }
+    }
+
+    // 이 화면은 타이틀 화면에서도 열린다(client.player == null) — 그 상태에서 저장이
+    // 실패하면 채팅 메시지로 알릴 수 없어 예전엔 아무 흔적도 안 남았다. 최소한 로그에는
+    // 남겨서, 원인 모를 "왜 설정이 안 저장되지" 문의가 왔을 때 debug.log로 추적할 수 있게.
+    private void reportSaveFailure(String chatMessage, IOException cause) {
+        if (client != null && client.player != null) {
+            client.player.sendMessage(Text.literal(chatMessage), false);
+        } else {
+            LOGGER.warn(chatMessage, cause);
         }
     }
 
