@@ -53,9 +53,26 @@ public class MinimapChunkCache implements MinimapCompositor.ColumnColorLookup {
                 // 시도할 수 있어야 하므로.
                 continue;
             }
-            colorsByChunk.put(coord, sampler.apply(world, coord));
+            int[] colors = sampler.apply(world, coord);
+            // 컬럼이 하나도 안 읽힌 샘플은 캐시하지 않는다. 캐시는 한 번 채우면 차원/월드가
+            // 바뀔 때까지 절대 다시 안 읽는 구조라, 이걸 저장해버리면 샘플링 순간의 일시적
+            // 실패가 재접속 전까지 고정된다 — 실기기에서 "가끔 검은 사각형이 남고 재접속해야
+            // 고쳐지는" 증상의 원인이 정확히 이것이다. 저장을 건너뛰면 다음 틱에 자동 재시도된다.
+            if (!isAllUnknown(colors)) {
+                colorsByChunk.put(coord, colors);
+            }
+            // 결과를 버렸어도 예산은 썼다 — 한 틱에 청크 하나 원칙을 유지한다.
             return;
         }
+    }
+
+    private static boolean isAllUnknown(int[] colors) {
+        for (int color : colors) {
+            if (color != 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override
